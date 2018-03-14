@@ -51,7 +51,7 @@ sudo docker build --file dockerfile_python --tag interpretability-python:v0 .
 sudo docker run --net="host" -v /home/josearcos/workshop-interpretability/:/usr/local/notebooks interpretability-python:v0   
 ```
 
-In order to build and execute a RStudio Server with every packages you will need:
+In order to build and execute a RStudio Server with every package you will need:
 
 ```
 sudo docker build --file dockerfile_r --tag interpretability-r:v0 .   
