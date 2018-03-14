@@ -1,0 +1,2 @@
+"0","s_train <- s_dataset[1:nrow(train),]"
+"0","s_test  <- s_dataset[(nrow(train) + 1):nrow(s_dataset),]"

@@ -1,0 +1,4 @@
+"0","#### Create Train / Test and Folds"
+"0","train = full[1:12000]"
+"0","test = full[12001:14999]"
+"0","cv <- createFolds(train[,left], k = 10)"

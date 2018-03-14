@@ -1,0 +1,7 @@
+"0","imputation <- impute(train, 
+                     cols = list(Age = imputeLearner(learner = ""regr.fnn"",
+                                                     features = c(""Pclass"", ""Sex"", ""Fare"", ""Embarked""))))
+"
+"2","Error in `[.data.table`(data, features) : 
+  When i is a data.table (or character vector), the columns to join by must be specified either using 'on=' argument (see ?data.table) or by keying x (i.e. sorted, and, marked as sorted, see ?setkey). Keyed joins might have further speed benefits on very large data due to x being sorted in RAM.
+"

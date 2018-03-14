@@ -1,0 +1,260 @@
+---
+title: "Explaining predictions with training set examples"
+output: html_notebook
+---
+
+# Abstract
+
+As I do not fully understand how to implement influence functions, and as our dataset is small, I will replace the influence functions with a "better but more expensive" procedure: leave-one-out retraining.
+
+If we have N training examples, I will train N + 1 different models. The first model will be trained in the complete dataset. The rest of the models will be trained in a dataset obtained by removing one training example. 
+
+The idea is, for each prediction, to use the N+1 models. By measuring the difference in prediction of each model with respect to the "full model", we can calculate the exact influence of each training set example in each prediction.
+
+Let's do it!
+
+
+<br>
+
+# Creating the full model
+
+```{r}
+
+set.seed(22)
+
+
+# Load libraries ---------------------------------------------------------------
+library(data.table)
+library(xgboost)
+library(magrittr)
+library(ggplot2)
+library(mlr)
+library(dplyr)
+library(purrr)
+library(aplpack)
+
+# Read data --------------------------------------------------------------------
+training_set <- fread("../../data/titanic/train.csv")
+test_set  <- fread("../../data/titanic/test.csv")
+labels <- fread(file = "../../data/titanic/titanic-labels.csv")
+passenger_names_train <- training_set$Name
+passenger_names_test  <- test_set$Name
+
+labels <- labels[, .(name, age, survived)]
+test_set_with_labels <- merge(x = test_set, y = labels,
+                              by.x = c("Name", "Age"), 
+                              by.y = c("name", "age"),
+                              all.x = TRUE, all.y = FALSE)
+
+test_set <- test_set_with_labels
+names(test_set)[names(test_set) == "survived"] <- "Survived"
+
+
+# Clean and transform data -----------------------------------------------------
+training_set[, Pclass := as.factor(Pclass)]
+test_set[, Pclass := as.factor(Pclass)]
+
+training_set[, Sex := as.factor(Sex)]
+test_set[, Sex := as.factor(Sex)]
+
+training_set[, Embarked := as.factor(Embarked)]
+test_set[, Embarked := as.factor(Embarked)]
+
+training_set[, Survived := factor(x = Survived, labels = c("dead", "survived"))]
+
+training_set[, PassengerId := NULL]
+test_set[, PassengerId := NULL]
+
+training_set[, Name := NULL]
+test_set[, Name := NULL]
+
+training_set[, Ticket := NULL]
+test_set[, Ticket := NULL]
+
+training_set[, Cabin := NULL]
+test_set[, Cabin := NULL]
+
+
+# Convert to data.frame --------------------------------------------------------
+training_set <- as.data.frame(training_set)
+test_set     <- as.data.frame(test_set)
+
+
+# Create model -----------------------------------------------------------------
+classification_task <- 
+  makeClassifTask(id = "titanic", 
+                  data = training_set, 
+                  target = "Survived", 
+                  positive = "survived")
+
+learner <- makeLearner(cl = "classif.xgboost", predict.type = "prob")
+learner <- makeImputeWrapper(learner, cols = list(Age = imputeMedian(), 
+                                                  Fare = imputeMedian()))
+learner <- makeDummyFeaturesWrapper(learner = learner, method = "reference")
+
+parameter_set <- makeParamSet(
+  makeDiscreteParam(id = "nrounds", values = 4:50),
+  makeDiscreteParam(id = "max_depth", values = 4:15),
+  makeDiscreteParam(id = "eta", values = seq(from = 0.1, to = 1, by = 0.1))
+)
+
+control <- makeTuneControlRandom(maxit = 100)
+
+resampling <- makeResampleDesc(method = "CV", iters = 5,
+                               stratify = TRUE)
+
+hyperparameters <- tuneParams(learner = learner,
+                              task = classification_task,
+                              resampling = resampling,
+                              par.set = parameter_set,
+                              control = control,
+                              measures = list(acc))
+optimal_learner <- setHyperPars(learner = learner,
+                                par.vals = hyperparameters$x)
+
+set.seed(22)
+model <- train(optimal_learner, classification_task)
+```
+
+
+# Create all other models
+
+```{r}
+
+other_models <- list()
+pb <- progress_estimated(n = nrow(training_set))
+
+for(i in 1:nrow(training_set)){
+  
+  other_classification_task <- 
+    makeClassifTask(id = paste0("titanic_", i), 
+                    data = training_set[-i,], 
+                    target = "Survived", 
+                    positive = "survived")
+  
+  set.seed(22)
+  other_model <- train(optimal_learner, other_classification_task)
+  other_models <- append(other_models, list(other_model))
+  
+  pb$tick()$print()
+  
+}
+
+```
+
+
+# ------------------------------------------------------------------------------
+# Predict an example with all the models
+
+```{r}
+
+example_index <- 1
+
+prediction <- predict(model, newdata = test_set[example_index, -which(colnames(test_set) == "Survived")])
+prediction <- prediction$data$prob.survived
+
+other_predictions <- map_dbl(other_models, function(m){
+  op <- predict(m, newdata = test_set[example_index, -which(colnames(test_set) == "Survived")])
+  op <- op$data$prob.survived
+  op
+})
+
+```
+
+
+# Rank training set points by importance
+
+```{r}
+influence <- prediction - other_predictions
+top_10_influencers <- order(abs(influence), decreasing = TRUE)[1:10]
+```
+
+
+# Compare 
+
+```{r}
+test_set[example_index,] %>% mutate(survived_prob = prediction)
+training_set[top_10_influencers,] %>% mutate(influence = influence[top_10_influencers])
+```
+
+
+# ------------------------------------------------------------------------------
+# Look for a failed prediction and explain it
+
+```{r}
+all_predictions <- predict(model, newdata = test_set[, -which(colnames(test_set) == "Survived")])
+all_predictions <- as.integer(all_predictions$data$response == "survived")
+cat("All failed predictions:\n")
+which(test_set$Survived != all_predictions)
+```
+
+```{r}
+test_set[test_set$Survived != all_predictions,]
+```
+
+
+```{r}
+
+example_index <- 130
+
+prediction <- predict(model, newdata = test_set[example_index, -which(colnames(test_set) == "Survived")])
+prediction <- prediction$data$prob.survived
+
+other_predictions <- map_dbl(other_models, function(m){
+  op <- predict(m, newdata = test_set[example_index, -which(colnames(test_set) == "Survived")])
+  op <- op$data$prob.survived
+  op
+})
+
+influence <- prediction - other_predictions
+top_8_influencers <- order(abs(influence), decreasing = TRUE)[1:8]
+
+test_set[example_index,] %>% mutate(survived_prob = prediction) %>% View(title = "prediction")
+training_set[top_8_influencers,] %>% mutate(influence = influence[top_8_influencers]) %>% View(title = "training influencers")
+
+```
+
+```{r}
+df_face <- rbind(test_set[example_index,],
+                 training_set[top_8_influencers,])
+df_face$Sex <- as.numeric(df_face$Sex == "male")
+df_face$Embarked <- ifelse(df_face$Embarked == "S", 1, 
+                           ifelse(df_face$Embarked == "C", 2,
+                                  ifelse(df_face$Embarked == "Q", 3, 0)))
+df_face$Survived <- NULL
+df_face$Pclass <- as.integer(df_face$Pclass)
+
+names <- c(passenger_names_test[example_index], passenger_names_train[top_8_influencers])
+
+faces(xy = df_face, fill = TRUE, na.rm = FALSE, main = "Titanic passengers", labels = names)
+```
+
+
+```{r}
+
+extract_booster <- function(mlr_model){
+  mlr_model$learner.model$next.model$learner.model$next.model$learner.model
+}
+
+booster_to_tree_structure <- function(xgb_booster){
+  xgboost::xgb.model.dt.tree(model = xgb_booster)
+}
+
+calculate_ntrees <- function(dt_tree_structure){
+  unique(dt_tree_structure$Tree) %>% length()
+}
+
+main_model_ntrees <- 
+  other_model %>% 
+  extract_booster() %>% 
+  booster_to_tree_structure() %>% 
+  calculate_ntrees()
+
+other_model_ntrees <-
+  map_dbl(other_models, ~ extract_booster(.x) %>% 
+            booster_to_tree_structure() %>% 
+            calculate_ntrees())
+```
+
+All the models have 22 trees. But they will be slightly different due to slightly different datasets.
+

@@ -1,0 +1,78 @@
+# Autor: José Alberto Arcos Sánchez
+# Fecha: 17 de diciembre de 2017
+
+library(tidyverse)
+library(stringr)
+
+# ------------------------------------------------------------------------------
+# Escribo el criptograma y el sudoku
+# ------------------------------------------------------------------------------
+
+criptograma <- c("ibrrgqeaq", "rbgvafanr", "rfznnngfe",
+                 "pqbpcrfvr", "aenbycnbq", "hffpfdnbr", 
+                 "bvfrpquav", "efrcydnbh", "gdprhvufv", 
+                 "hhnfvrdfr", "ynnygzfnr", "neennnegf", 
+                 "bnaviycrf", "gfbvvybnf", "rfgrfihay", 
+                 "fkbncerny", "qprarffnh", "mhreosrvy", 
+                 "fnnrvaqiq")
+
+criptograma_split <- map(criptograma, ~ str_split(., pattern = "") %>% unlist())
+
+raw_sudoku <- "FCHIDEABGEGBCAHDIFIDAGBFHCEGBFACIEDHAIEHFDCGBDHCBEGFAIHAGFICBEDBEIDHAGFCCFDEGBIHA"
+sudoku <- matrix(data = unlist(str_split(string = raw_sudoku, pattern = "")), nrow = 9, byrow = TRUE)
+numeric_sudoku <- sudoku
+numeric_sudoku[numeric_sudoku == "A"] <- 1
+numeric_sudoku[numeric_sudoku == "B"] <- 2
+numeric_sudoku[numeric_sudoku == "C"] <- 3
+numeric_sudoku[numeric_sudoku == "D"] <- 4
+numeric_sudoku[numeric_sudoku == "E"] <- 5
+numeric_sudoku[numeric_sudoku == "F"] <- 6
+numeric_sudoku[numeric_sudoku == "G"] <- 7
+numeric_sudoku[numeric_sudoku == "H"] <- 8
+numeric_sudoku[numeric_sudoku == "I"] <- 9
+numeric_sudoku <- matrix(data = as.numeric(numeric_sudoku), nrow = 9)
+
+
+# ------------------------------------------------------------------------------
+# Calcula la frecuencia de cada letra en el mensaje
+# ------------------------------------------------------------------------------
+
+all_letters <- unlist(criptograma_split)
+histogram <- table(all_letters)
+complete_histogram <- rep(0, length(letters))
+names(complete_histogram) <- letters
+complete_histogram[names(histogram)] <- histogram
+
+# Viendo las frecuencias, parece que el diccionario está desplazado, de forma
+# que A -> N
+
+
+# ------------------------------------------------------------------------------
+# Corrijo el desplazamiento del diccionario 
+# ------------------------------------------------------------------------------
+
+dictionary <- letters
+names(dictionary) <- c(letters[14:26], letters[1:13])
+# > dictionary[c("n", "o", "p")]
+#   n   o   p 
+#  "a" "b" "c" 
+
+# Substitute characters in criptogram
+translated_criptogram <- map(criptograma_split, ~ dictionary[.])
+
+
+# ------------------------------------------------------------------------------
+# Utilizo los números de cada cuadro del sudoku para ordenar cada palabra
+# del criptograma
+# ------------------------------------------------------------------------------
+
+squares <- list()
+for(row in c(1,4,7)){
+  for(col in c(1,4,7)){
+    square <- numeric_sudoku[row:(row+2), col:(col+2)]  %>% t() %>% as.vector()
+    squares <- append(squares, list(square))
+  }
+}
+squares <- c(squares, squares, squares[1])
+resultado <- map2(translated_criptogram, squares, ~ .x[.y %>% t() %>% as.vector]) %>% unlist()
+cat(resultado)

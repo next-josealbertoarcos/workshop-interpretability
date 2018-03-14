@@ -1,0 +1,4 @@
+"0","cr <- colorRamp(c(""blue"", ""red""))"
+"0","plot(test[,last_evaluation], pred.breakdown[,last_evaluation], "
+"0","     col = rgb(cr(round(test[,satisfaction_level])), max=255), cex=0.4, pch=16, "
+"0","     xlab = ""Last evaluation"", ylab = ""Last evaluation impact on log-odds"")"

@@ -1,0 +1,281 @@
+---
+title: "Modeling Titanic deaths (LIME)"
+output: html_notebook
+---
+
+# Abstract
+
+In this document I will try to create an XGBoost model to predict which passengers will die in the sinking of the Titanic. 
+
+Then I will explain the predictions using LIME, and compare results with the results from those generated with XGBoost Explainer.
+
+Let's begin!
+
+
+<br><br>
+
+# Load libraries and read data
+
+```{r message=FALSE}
+library(data.table)
+library(xgboost)
+library(lime)
+library(magrittr)
+library(ggplot2)
+library(Matrix)
+```
+
+```{r}
+train <- fread("../data/train.csv")
+test  <- fread("../data/test.csv")
+```
+
+
+# Clean and transform data
+
+Let's join train and test to clean and transform them:
+
+```{r}
+survived <- train$Survived
+train[, Survived := NULL]
+dataset <- rbind(train, test)
+str(dataset)
+```
+
+Create factor features and remove non-important (or too complex) ones:
+
+```{r}
+dataset[, PassengerId := NULL]
+
+dataset[, Pclass := as.factor(Pclass)]
+
+passenger_names <- dataset[, Name]
+dataset[, Name := NULL]
+
+dataset[, Sex := as.factor(Sex)]
+
+dataset[, Ticket := NULL]
+dataset[, Cabin := NULL]
+
+dataset[, Embarked := as.factor(Embarked)]
+
+str(dataset)
+```
+
+Complete NAs:
+
+```{r}
+dataset[, sum(is.na(Age))]
+median_age <- dataset[, median(Age, na.rm = TRUE)]
+dataset[is.na(Age), Age := median_age]
+dataset[, sum(is.na(Age))]
+```
+```{r}
+dataset[, sum(is.na(SibSp))]
+dataset[, sum(is.na(Parch))]
+```
+```{r}
+dataset[, sum(is.na(Fare))]
+median_fare <- dataset[, median(Fare, na.rm = TRUE)]
+dataset[is.na(Fare), Fare := median_fare]
+dataset[, sum(is.na(Fare))]
+```
+
+```{r}
+train <- dataset[1:nrow(train)]
+test  <- dataset[(nrow(train) + 1):nrow(dataset),]
+```
+
+
+
+Create sparse matrix (one-hot encoding):
+
+```{r}
+s_dataset <- sparse.model.matrix(~ . - 1, data = dataset)
+colnames(s_dataset)
+nrow(s_dataset)
+```
+
+```{r}
+s_train <- s_dataset[1:nrow(train),]
+s_test  <- s_dataset[(nrow(train) + 1):nrow(s_dataset),]
+```
+
+```{r}
+train_target <- survived
+```
+
+Create xgb matrices:
+
+```{r}
+xgb_train <- xgb.DMatrix(data = s_train, label = train_target)
+xgb_test  <- xgb.DMatrix(data = s_test)
+```
+
+
+<br><br>
+
+# Create XGBoost model
+
+Hyperparameter selection:
+
+```{r}
+n_trials <- 20
+
+max_depth_range <- 3:10
+eta_range <- seq(from = 0.1, to = 1, by = 0.1)
+
+max_depth_sample <- sample(x = max_depth_range, size = n_trials, replace = TRUE)
+eta_sample <- sample(x = eta_range, size = n_trials, replace = TRUE)
+
+results <- list()
+for(i in 1:n_trials){
+  cv <- xgb.cv(params = list(booster = "gbtree",
+                             eta = eta_sample[i], 
+                             max_depth = max_depth_sample[i],
+                             objective = "binary:logistic"),
+               data = xgb_train,
+               nrounds = 100,
+               early_stopping_rounds = 5,
+               nfold = 4,
+               metrics = "error")
+  results <- append(results, list(cv$evaluation_log[cv$best_iteration,]))
+  cat("Iteration", i, "finished")
+}
+```
+
+```{r}
+df_results <- do.call(rbind, results) %>% as.data.frame()
+best_iteration <- which.min(df_results$test_error_mean)
+best_max_depth <- max_depth_sample[best_iteration]
+best_eta <- eta_sample[best_iteration]
+
+cv <- xgb.cv(params = list(booster = "gbtree",
+                           eta = best_eta, 
+                           max_depth = best_max_depth,
+                           objective = "binary:logistic"),
+             data = xgb_train,
+             nrounds = 300,
+             early_stopping_rounds = 5,
+             nfold = 5)
+```
+
+```{r}
+best_nrounds <- cv$best_iteration
+```
+
+
+<br><br>
+
+# Train model
+
+```{r}
+model <- xgb.train(params = list(booster = "gbtree",
+                                 eta = best_eta, 
+                                 max_depth = best_max_depth,
+                                 objective = "binary:logistic"),
+                   data = xgb_train,
+                   nrounds = best_nrounds)
+```
+
+
+<br><br>
+
+# Predict test
+
+```{r}
+predictions <- as.numeric(predict(model, xgb_test) > 0.5)
+```
+
+<br><br>
+
+# Explain some predictions
+
+Until now, we could only extract the general feature importance:
+
+```{r}
+col_names = attr(xgb_train, ".Dimnames")[[2]]
+imp = xgb.importance(col_names, model)
+xgb.plot.importance(imp)
+```
+
+But now we can go much further!!
+
+Let's build the explainer. LIME needs data without response variable:
+
+```{r}
+
+explainer <- explainer()
+```
+
+Let's plot some waterfalls:
+
+```{r}
+showWaterfall(xgb.model = model, explainer = explainer, DMatrix = xgb_test,
+              data.matrix = s_test, idx = 1, type = "binary", threshold = 0.1) +
+  theme_minimal()
+```
+
+The first interesting thing to note is the intercept. As most of the passegers died, there is an intercept of log(-0.71), equivalent to a 0.33 probability of surviving. So, for a passenger whom we don't know anything about, the best estimate we can make is that his probability of surviving is 0.33.
+
+For this particular case, we see that a low ticket fare makes the passenger much more probable to die (mean ticker fare = 33.28). He is also a man, and not too young, so he almost surely died.
+
+Another interesting detail is the "other" bar. We can set a threshold in **showWaterfall** so that any feature with influence less than the threshold won't be shown, and will be grouped in the *other* column.
+
+Let's explain other passenger's prediction:
+
+```{r}
+showWaterfall(xgb.model = model, explainer = explainer, DMatrix = xgb_test,
+              data.matrix = s_test, idx = 2, type = "binary", threshold = 0.1)
+```
+
+In this case we have a woman. Her age is the main reason why the algorithm is predicting her death. The fact of being a woman improves her probability of living, but she traveled in Pclass3, so she probably died.
+
+An interesting detail is that in this case, a Fare of 7 makes the probability of living to increase, while in the previous passenger a higher Fare (7.8) made the probability of living to decrease. The influence of a feature may depend on the value of other features. Sometimes this behavior will be correct, sometimes not. Fortunately, we are able to explore the effect of any variable in the influence of other. Let's try this with the Fare variable:
+
+```{r}
+prediction_breakdown <- explainPredictions(xgb.model = model,
+                                           explainer = explainer,
+                                           data = xgb_test)
+```
+
+```{r}
+ggplot() +
+  geom_point(aes(test$Fare, prediction_breakdown$Fare)) +
+  geom_smooth(aes(test$Fare[test$Fare < 500], prediction_breakdown$Fare[test$Fare < 500])) +
+  labs(x = "Fare", y = "Influence of Fare in survival probability")
+```
+
+There is a clear relationship between the paid Fare and the influence of the Fare in survival probability, according to the model. The higher the Fare, the more positive the influence of Fare in the probability of surviving. At least until reaching a Fare of 100. After that, the influence is still positive, but Fare gets less important than other features.
+
+We can use this kind of plots to compare feature importance. Let's see the Age influence:
+
+```{r}
+ggplot() +
+  geom_point(aes(test$Age, prediction_breakdown$Age)) +
+  geom_smooth(aes(test$Age, prediction_breakdown$Age), method = "loess") +
+  labs(x = "Age", y = "Influence of Age in survival probability")
+```
+
+We see that the Age has a huge positive impact for people under 10, has a null mean impact between 20 and 40, and has a slight negative impact after 40.
+
+We can also see cross influence between variables. For example, we can see how Age influences the importance of Fare in survival probability:
+
+```{r}
+ggplot() +
+  geom_point(aes(test$Age, prediction_breakdown$Fare)) +
+  geom_smooth(aes(test$Age, prediction_breakdown$Fare), method = "loess") +
+  labs(x = "Age", y = "Influence of Fare in survival probability")
+```
+
+This means that Fare in only important in the survival probability for people that are older than 40. This is great, because it may help us take more concise decisions.
+
+```{r}
+ggplot() +
+  geom_point(aes(test$Age[test$Age < 70], prediction_breakdown$Sexmale[test$Age < 70])) +
+  geom_smooth(aes(test$Age[test$Age < 70], prediction_breakdown$Sexmale[test$Age < 70]),
+              method = "loess") +
+  labs(x = "Age", y = "Influence of Sex in survival probability")
+```
+
+We don't have enough data to extract conclusions. But this tool is great!!

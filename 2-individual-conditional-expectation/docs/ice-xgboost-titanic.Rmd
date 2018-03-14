@@ -1,0 +1,179 @@
+---
+title: "Individual Conditional Expectation Plots to understand XGBoost"
+output: html_notebook
+---
+
+<br><br>
+
+## Abstract
+
+In this document I will show how to use **Individual Conditional Expectation Plots** to better understand what a complex model is doing. An ICE plot visualises the dependence of the predicted response on a feature for EACH instance separately, resulting in multiple lines, one for each instance. If you want to know more about Individual Conditional Expectation Plots, look at the great [Interpretable Machine Learning](https://christophm.github.io/interpretable-ml-book/ice.html) book.
+
+I will use the R [pdp](https://github.com/bgreenwell/pdp) package to calculate and plot the **Individual Conditional Expectation Plots**.
+
+<br><br>
+
+## Loading the model and the needed packages
+
+```{r}
+library(pdp)
+library(magrittr)
+library(ggplot2)
+
+load("../../0-model-to-explain/xgboost-titanic.RData")
+
+set.seed(22)
+```
+
+
+<br><br>
+
+## Calculate and plot Individual Conditional Expectation Plots of interest
+
+We can choose to treat features individually or to combine two or three of them to see the combined influence in the output (as the model sees it).
+
+<br>
+
+### Age
+
+Let's start by analysing how the model thinks that the age affects the probability of surviving:
+
+```{r}
+pd <- partial(object = xgb_model, 
+              pred.var = c("Age"), 
+              type = "classification",
+              ice = TRUE,
+              prob = TRUE,
+              smooth = FALSE,
+              train = preprocessed_training_set,
+              plot = FALSE,
+              grid.resolution = 16)
+
+pd_median <- pd %>% dplyr::group_by(Age) %>% dplyr::summarise(median = median(yhat)) # PDP
+
+ggplot(pd) +
+  geom_line(aes(x = Age, y = yhat, group = yhat.id), alpha = 0.05) + 
+  geom_line(data = pd_median,  # PDP
+            mapping = aes(x = Age, y = median), color = "blue", size = 1.5, linetype = "dashed") +
+  geom_hline(yintercept = 0.5, color = "red") +
+  labs(title = "Age influence", x = "age", y = "predicted probability of surviving") +
+  theme_minimal()
+```
+
+This is very interesting!! There is a general and logical pattern: if you are a child, you survive. And as you get older, your probability of surviving is lower and lower.
+
+But the interesting thing is that the model has other patterns inside!! Some people will not survive, even being children. Others survive always, as if the age was not important for them.
+
+Do these patterns make sense? We should look at the data to find answers. But this insight into the model is of great value to understand what it is doing, and to find possible problems due to the lack of data or other reasons.
+
+Just out of curiosity, let's see which people would have survived at any age according to the model:
+
+```{r}
+lucky_people <- 
+  pd %>% dplyr::mutate(s = yhat > 0.8) %>% dplyr::group_by(yhat.id) %>% 
+  dplyr::summarise(power = sum(s), n = n()) %>% dplyr::filter(power == 16) %>% 
+  dplyr::select(yhat.id) %>% unlist()
+
+length(lucky_people)
+```
+
+Wow! 93 people would have survived no matter their age!!
+
+Let's see who are they:
+
+```{r}
+df_lucky_people <- preprocessed_training_set[lucky_people,]
+```
+
+All of them are women. Most of them, first class passengers. That explains why they were so lucky :)
+
+<br>
+
+### Fare
+
+Let's now analyse how the model thinks that the fare affects the probability of surviving:
+
+```{r}
+pd <- partial(object = xgb_model, 
+              pred.var = c("Fare"), 
+              type = "classification",
+              ice = TRUE,
+              prob = TRUE,
+              smooth = FALSE,
+              train = preprocessed_training_set,
+              plot = FALSE,
+              grid.resolution = 16)
+
+pd_median <- pd %>% dplyr::group_by(Fare) %>% dplyr::summarise(median = median(yhat)) # PDP
+
+ggplot(pd) +
+  geom_line(aes(x = Fare, y = yhat, group = yhat.id), alpha = 0.05) + 
+  geom_line(data = pd_median,  # PDP
+            mapping = aes(x = Fare, y = median), color = "blue", linetype = "dashed", size = 1.5) +
+  geom_hline(yintercept = 0.5, color = "red") +
+  labs(title = "Fare influence", x = "fare", y = "predicted probability of surviving") +
+  theme_minimal()
+```
+
+This is a bit strange. The influence of the fare between 0 and 120 makes sense. The more you pay, the more probable it is that you survive (we all know what happened). But there is a kind of gap between 120 and 250, where the probability of dying increases strongly. Why? Is this something real (maybe the rooms within that range of fares were in a bad positioned place in the Titanic)? Or is this something about the model? Maybe we don't have enough data in that fare range and the model is overfitting.
+
+
+```{r}
+ggplot(training_set) + geom_histogram(mapping = aes(x = Fare), binwidth = 50)
+```
+
+There are few data points over 150, and almost none over 250. So, it is ok that the Fare influence is almost null over 250 according to the model.
+
+We could go on digging, but this is out of the scope of this document. The great thing is that this is a good way of having general insights about what the model is doing.
+
+
+## Sex
+
+Let's try to do the same with a cathegorical variable:
+
+```{r}
+sex_pd <- partial(object = xgb_model, 
+                  pred.var = "male",
+                  type = "classification",
+                  ice = TRUE,
+                  prob = TRUE,
+                  smooth = FALSE,
+                  train = preprocessed_training_set,
+                  plot = FALSE,
+                  cats = "male")
+
+ggplot(sex_pd) +
+  geom_line(aes(x = male, y = yhat, group = yhat.id), alpha = 0.05) + 
+  geom_hline(yintercept = 0.5, color = "red") +
+  labs(title = "Sex (male) influence", x = "male", y = "predicted probability of surviving") +
+  theme_minimal()
+```
+
+Sex has a clear influence in the probability of surviving :)
+We can measure it in a clearer way by counting the number of survivors in the female zone and the number of survivors in the male zone (remember that we are predicting the same points just changing the Sex.female value):
+
+```{r}
+sex_pd %>% dplyr::group_by(male) %>% dplyr::summarise(survivors = sum(yhat > 0.5), deads = sum(yhat <= 0.5))
+```
+
+It is also interesting to see that there are some lines going up, i.e., some passengers have less probability of surviving when being females than when being males. Let's see who are they:
+
+```{r}
+sex_pd %>% tidyr::spread(key = male, value = yhat) -> aux_sex_pd
+colnames(aux_sex_pd)[colnames(aux_sex_pd) == 1] <- "male"
+colnames(aux_sex_pd)[colnames(aux_sex_pd) == 0] <- "female"
+special_people <- aux_sex_pd$yhat.id[aux_sex_pd$male > aux_sex_pd$female]
+```
+
+```{r}
+df_special_people <- preprocessed_training_set[special_people,]
+```
+
+There are many children. This is an interesting issue worth studying, but it is out of the scope of this PoC.
+
+
+# Conclusions
+
+ICEs are a great tool to get an idea of what our model is doing, locally and globally, and to find weird behaviors worth investigating.
+
+

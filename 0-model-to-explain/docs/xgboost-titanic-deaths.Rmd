@@ -1,0 +1,217 @@
+---
+title: "XGBoost model to predict Titanic deaths"
+author: "José Alberto Arcos Sánchez"
+date: "29 de diciembre de 2017"
+output: html_notebook
+---
+
+# Abstract
+
+In this document I will create a XGBoost model to predict which passengers will die in the sinking of the Titanic. 
+
+This model will be used later to compare several interpretability tools.
+
+Let's begin!
+
+
+<br><br>
+
+# Make this reproducible
+
+```{r}
+set.seed(22)
+```
+
+
+# Load libraries and read data
+
+```{r message=FALSE}
+library(data.table)
+library(mlr)
+library(magrittr)
+library(ggplot2)
+library(xgboost)
+```
+
+```{r}
+training_set <- fread("../../data/titanic/train.csv")
+test_set  <- fread("../../data/titanic/test.csv")
+labels <- fread(file = "../../data/titanic/titanic-labels.csv")
+
+labels <- labels[, .(name, age, survived)]
+test_set_with_labels <- merge(x = test_set, y = labels,
+                              by.x = c("Name", "Age"), 
+                              by.y = c("name", "age"),
+                              all.x = TRUE, all.y = FALSE)
+
+test_set <- test_set_with_labels
+
+```
+
+
+# Clean and transform data
+
+Create factor features and remove non-important (or too complex) ones:
+
+```{r}
+
+training_set[, Pclass := as.factor(Pclass)]
+test_set[, Pclass := as.factor(Pclass)]
+
+training_set[, Sex := as.factor(Sex)]
+test_set[, Sex := as.factor(Sex)]
+
+training_set[, Embarked := as.factor(Embarked)]
+test_set[, Embarked := as.factor(Embarked)]
+
+training_set[, Survived := factor(x = Survived, labels = c("dead", "survived"))]
+
+training_set[, PassengerId := NULL]
+test_set[, PassengerId := NULL]
+
+training_set[, Name := NULL]
+test_set[, Name := NULL]
+
+training_set[, Ticket := NULL]
+test_set[, Ticket := NULL]
+
+training_set[, Cabin := NULL]
+test_set[, Cabin := NULL]
+```
+
+Convert to data.frame:
+
+```{r}
+training_set <- as.data.frame(training_set)
+test_set     <- as.data.frame(test_set)
+```
+
+<br><br>
+
+# Create model
+
+```{r}
+classification_task <- 
+  makeClassifTask(id = "titanic", 
+                  data = training_set, 
+                  target = "Survived", 
+                  positive = "survived",
+                  fixup.data = "no",
+                  check.data = FALSE)
+```
+
+```{r}
+learner <- makeLearner(cl = "classif.xgboost",
+                       predict.type = "prob")
+```
+
+Create imputation wrapper (for Age and Fare):
+
+```{r}
+learner <- makeImputeWrapper(learner, cols = list(Age = imputeMedian(), 
+                                                  Fare = imputeMedian()))
+```
+
+
+Create one-hot encoding wrapper:
+
+```{r}
+learner <- makeDummyFeaturesWrapper(learner = learner, method = "reference")
+```
+
+
+# Choose hyperparameters
+
+```{r}
+parameter_set <- makeParamSet(
+  makeDiscreteParam(id = "nrounds", values = 4:50),
+  makeDiscreteParam(id = "max_depth", values = 4:15),
+  makeDiscreteParam(id = "eta", values = seq(from = 0.1, to = 1, by = 0.1))
+)
+```
+
+```{r}
+control <- makeTuneControlRandom(maxit = 100)
+```
+
+
+```{r}
+resampling <- makeResampleDesc(method = "CV", iters = 5,
+                               stratify = TRUE)
+
+hyperparameters <- tuneParams(learner = learner,
+                              task = classification_task,
+                              resampling = resampling,
+                              par.set = parameter_set,
+                              control = control,
+                              measures = list(acc))
+```
+
+
+# Train model
+
+```{r}
+optimal_learner <- setHyperPars(learner = learner,
+                                par.vals = hyperparameters$x)
+
+model <- train(optimal_learner, classification_task)
+
+# Get the exact preprocessed_training_set (needed to explain with some methods)
+train_dummies <- createDummyFeatures(obj = classification_task, method = "reference")
+train_imputed <- impute(obj = train_dummies, cols = list(Age = imputeMedian(), Fare = imputeMedian()))
+preprocessed_training_set <- train_imputed$task$env$data %>% 
+  dplyr::select(-Survived) %>% 
+  as.matrix()
+```
+
+
+# Predict test_set
+
+```{r}
+predictions <- 
+  predict(model, newdata = test_set[, -which(colnames(test_set) == "survived")])
+
+# Calculate preprocessed test set (needed to explain things later) 
+test_dummies <- createDummyFeatures(obj = test_set[, -which(colnames(test_set) == "survived")],
+                                    method = "reference")
+test_dummies$Embarked.C <- 0
+test_imputed <- reimpute(obj = test_dummies, desc = train_imputed$desc)
+preprocessed_test_set <- as.matrix(test_imputed)
+```
+
+
+# Submit results to check cross-validation estimations
+
+```{r}
+submission <- fread("../../data/titanic/test.csv")
+submission$Survived <- predictions$data$response %>% as.integer() - 1
+submission <- submission[, c("PassengerId", "Survived")]
+fwrite(x = submission, file = "submission.csv")
+# Your submission scored 0.77
+```
+
+The score is a bit lower than expected, but we do not have a lot of data, so that is something that could happen. Anyway, it is not a bad result! We are using only part of the available information, and the top accuracy using every possible feature is around 0.85.
+
+Let's extract the xgboost model from the MLR structure:
+
+```{r}
+extract_booster <- function(mlr_model){
+  mlr_model$learner.model$next.model$learner.model$next.model$learner.model
+}
+
+xgb_model <- extract_booster(model)
+```
+
+
+So, let's save the model to use it later:
+
+```{r}
+save(xgb_model, model,
+     training_set, test_set, 
+     preprocessed_training_set,
+     preprocessed_test_set,
+     file = "../xgboost-titanic.RData")
+```
+
+
+

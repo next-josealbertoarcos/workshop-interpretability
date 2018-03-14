@@ -1,0 +1,5 @@
+"0","ggplot() +"
+"0","  geom_point(aes(test$Age[test$Age < 70], prediction_breakdown$Sexmale[test$Age < 70])) +"
+"0","  geom_smooth(aes(test$Age[test$Age < 70], prediction_breakdown$Sexmale[test$Age < 70]),"
+"0","              method = ""loess"") +"
+"0","  labs(x = ""Age"", y = ""Influence of Sex in survival probability"")"

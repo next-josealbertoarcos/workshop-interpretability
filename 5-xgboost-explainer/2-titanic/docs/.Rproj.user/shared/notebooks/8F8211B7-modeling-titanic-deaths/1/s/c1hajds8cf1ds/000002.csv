@@ -1,0 +1,6 @@
+"0","model <- xgb.train(params = list(booster = ""gbtree"","
+"0","                                 eta = best_eta, "
+"0","                                 max_depth = best_max_depth,"
+"0","                                 objective = ""binary:logistic""),"
+"0","                   data = xgb_train,"
+"0","                   nrounds = best_nrounds)"

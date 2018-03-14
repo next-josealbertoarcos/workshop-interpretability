@@ -1,0 +1,4 @@
+"0","```r
+plot(test[,last_evaluation], pred.breakdown[,last_evaluation], cex=0.4, pch=16, 
+     xlab = \"Last evaluation\", ylab = \"Last evaluation impact on log-odds\")
+```"

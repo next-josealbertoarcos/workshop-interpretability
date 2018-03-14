@@ -1,0 +1,1 @@
+"0","predictions <- as.numeric(predict(model, xgb_test) > 0.5)"

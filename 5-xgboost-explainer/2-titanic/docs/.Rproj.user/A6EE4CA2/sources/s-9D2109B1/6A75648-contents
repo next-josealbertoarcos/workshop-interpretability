@@ -1,0 +1,90 @@
+---
+title: "Lime example"
+output: html_notebook
+---
+
+# Abstract
+
+In this document I will just reproduce a working LIME example and explore the results and how LIME works.
+
+
+# Load data and fit model
+
+```{r}
+library(MASS)
+library(lime)
+data(biopsy)
+library(magrittr)
+
+# First we'll clean up the data a bit
+biopsy$ID <- NULL
+biopsy <- na.omit(biopsy)
+names(biopsy) <- c('clump thickness', 
+                   'uniformity of cell size', 
+                   'uniformity of cell shape', 
+                   'marginal adhesion',
+                   'single epithelial cell size', 
+                   'bare nuclei', 
+                   'bland chromatin',
+                   'normal nucleoli', 
+                   'mitoses',
+                   'class')
+
+# Now we'll fit a linear discriminant model on all but 4 cases
+set.seed(4)
+test_set <- sample(seq_len(nrow(biopsy)), 4)
+prediction <- biopsy$class
+biopsy$class <- NULL
+model <- lda(biopsy[-test_set, ], prediction[-test_set])
+```
+
+# Predict test set
+
+```{r}
+predict(model, biopsy[test_set, ])
+prediction[test_set]
+```
+
+Predictions are pretty good, and pretty solid (with very high probabilities). 
+
+
+<br><br>
+
+# Explain predictions
+
+Let's see how these predictions came to be:
+
+```{r}
+explainer <- lime(biopsy[-test_set,], 
+                  model, 
+                  bin_continuous = TRUE, 
+                  quantile_bins = FALSE)
+
+explanation <- explain(biopsy[test_set, ], 
+                       explainer, 
+                       n_labels = 1, 
+                       n_features = 4)
+
+View(explanation)
+```
+
+Let's plot it:
+
+```{r}
+plot_features(explanation, ncol = 1)
+```
+
+I see some problems in the way LIME shows the influence of features. In the **Case 7**, it looks like the negative influence of **barei_nuclei** in greater than the other three variables. How does that explain the final label: *benign*? I guess the rest of the features outweigh the negative influence of **barei_nuclei**. But that is not explicitly shown here!! That's a disadvantage of this method against the XGBoost Explainer method.
+
+Meybe we can increase the number of desired features to avoid this effect:
+
+```{r}
+explanation <- explain(biopsy[test_set[2], ], 
+                       explainer, 
+                       n_labels = 1, 
+                       n_features = 10)
+
+plot_features(explanation, ncol = 1)
+```
+
+Well, that solves the problem. But the **other** feature would be nice.

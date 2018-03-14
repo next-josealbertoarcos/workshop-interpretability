@@ -1,0 +1,4 @@
+"0","ggplot() +"
+"0","  geom_point(aes(test$Age, prediction_breakdown$Fare)) +"
+"0","  geom_smooth(aes(test$Age, prediction_breakdown$Fare), method = ""loess"") +"
+"0","  labs(x = ""Age"", y = ""Influence of Fare in survival probability"")"

@@ -1,0 +1,235 @@
+---
+title: "XGBoost Explainer 1"
+output: html_notebook
+---
+
+### Abstract
+
+This notebook tries to explore what is already shown and explained in [this great article](https://medium.com/applied-data-science/new-r-package-the-xgboost-explainer-51dd7d1aa211).
+
+We are basically exploring what the XGBoost Explainer is able to do. Let's see!
+
+
+### Explained code
+
+Let's load the needed packages:
+
+```{r}
+library(data.table)
+library(glue)
+library(rpart)
+library(rpart.plot)
+library(caret)
+library(xgboost)
+library(pROC)
+```
+
+
+Read data, sample it, add noise and scale:
+
+```{r}
+
+set.seed(123)
+
+full = fread('../data/HR_comma_sep.csv', stringsAsFactors = T)
+full = full[sample(.N)]
+
+#### Add Random Noise and scale
+
+tmp_std = sd(full[,satisfaction_level])
+full[,satisfaction_level:=satisfaction_level + runif(.N,-tmp_std,tmp_std)]
+full[,satisfaction_level:=satisfaction_level - min(satisfaction_level)]
+full[,satisfaction_level:=satisfaction_level / max(satisfaction_level)]
+
+tmp_std = sd(full[,last_evaluation])
+full[,last_evaluation:=last_evaluation + runif(.N,-tmp_std,tmp_std) ]
+full[,last_evaluation:=last_evaluation - min(last_evaluation)]
+full[,last_evaluation:=last_evaluation / max(last_evaluation)]
+
+tmp_min = min(full[,number_project])
+tmp_std = sd(full[,number_project])
+full[,number_project:=number_project + sample(-ceiling(tmp_std):ceiling(tmp_std),.N, replace=T)]
+full[,number_project:=number_project - min(number_project) + tmp_min]
+
+tmp_min = min(full[,average_montly_hours])
+tmp_std = sd(full[,average_montly_hours])
+full[,average_montly_hours:=average_montly_hours + sample(-ceiling(tmp_std):ceiling(tmp_std),.N, replace=T)]
+full[,average_montly_hours:=average_montly_hours - min(average_montly_hours) + tmp_min]
+
+tmp_min = min(full[,time_spend_company])
+tmp_std = sd(full[,time_spend_company])
+full[,time_spend_company:=time_spend_company + sample(-ceiling(tmp_std):ceiling(tmp_std),.N, replace=T)]
+full[,time_spend_company:=time_spend_company - min(time_spend_company) + tmp_min]
+
+tmp_min = min(full[,number_project])
+tmp_std = sd(full[,number_project])
+full[,number_project:=number_project + sample(-ceiling(tmp_std):ceiling(tmp_std),.N, replace=T)]
+full[,number_project:=number_project - min(number_project) + tmp_min]
+
+
+```
+
+
+Create train and test datasets:
+
+```{r}
+
+#### Create Train / Test and Folds
+
+train = full[1:12000]
+test = full[12001:14999]
+
+cv <- createFolds(train[,left], k = 10)
+
+```
+
+
+Train XGBoost model:
+
+```{r}
+
+#### Train XGBoost
+
+xgb.train.data = xgb.DMatrix(data.matrix(train[,-'left']), label = train[,left], missing = NA)
+
+param <- list(objective = "binary:logistic", base_score = 0.5)
+xgboost.cv <- xgb.cv(param = param, data = xgb.train.data, folds = cv, nrounds = 1500, 
+                     early_stopping_rounds = 100, metrics='auc')
+best_iteration <- xgboost.cv$best_iteration
+
+xgb.model <- xgboost(param = param, data = xgb.train.data, nrounds=best_iteration)
+
+```
+
+
+Predict test and evaluate:
+
+```{r}
+
+xgb.test.data = xgb.DMatrix(data.matrix(test[,-'left']), missing = NA)
+xgb.preds = predict(xgb.model, xgb.test.data)
+xgb.roc_obj <- roc(test[,left], xgb.preds)
+
+cat("XGB AUC ", auc(xgb.roc_obj))
+
+```
+
+
+Plot the variable importance:
+
+```{r}
+
+#### Xgb importance
+col_names = attr(xgb.train.data, ".Dimnames")[[2]]
+
+imp = xgb.importance(col_names, xgb.model)
+xgb.plot.importance(imp)
+
+```
+
+And now we use the explainer. Let's construct the explainer. The result will be a data table where each row is a leaf of a tree in the xgboost model and each column is the impact of each feature on the prediction at the leaf.
+
+```{r}
+
+#### THE XGBoost Explainer
+
+library(xgboostExplainer)
+ 
+explainer <- buildExplainer(xgb.model,xgb.train.data, type="binary", 
+                            base_score = 0.5, 
+                            n_first_tree = xgb.model$best_ntreelimit - 1)
+
+head(explainer)
+
+```
+
+
+The number of rows in the explainer should equal the number of leafs in all trees. Let's check:
+
+```{r}
+
+tree_structure <- xgb.model.dt.tree(model = xgb.model)
+cat(glue("Number of trees in the model: {max(tree_structure$Tree)}"), fill = TRUE)
+cat(glue("Number of leafs in the model: {nrow(tree_structure[Feature == 'Leaf'])}"), fill = TRUE)
+cat(glue("Number of rows in the explainer: {nrow(explainer)}"), fill = TRUE)
+
+```
+
+Perfect!! :)
+
+Let's now use the explainer to explain all our test predictions. The function **explainPredictions** returns a data table where each row is an observation in the data and each column is the impact of each feature on the prediction. The sum of the row equals the prediction of the xgboost model for this observation (log-odds if binary response).
+
+```{r}
+pred.breakdown = explainPredictions(xgb.model, explainer, xgb.test.data)
+cat('Breakdown Complete','\n')
+```
+
+So summing each row, we get the predictions:
+
+```{r}
+weights = rowSums(pred.breakdown)
+pred.xgb = 1/(1+exp(-weights))
+cat(max(xgb.preds-pred.xgb),'\n')
+```
+
+Nice!
+
+Let's plot a waterfall plot for a particular case in the test set:
+
+```{r}
+
+idx_to_get = 802L
+# idx_to_get = 57L
+test[idx_to_get,-"left"]
+showWaterfall(xgb.model = xgb.model, explainer = explainer, 
+              DMatrix = xgb.test.data, data.matrix = data.matrix(test[,-'left']), 
+              idx = idx_to_get, type = "binary")
+```
+
+Let's experiment a bit. What if we modify the most important variable for a particular prediction? Will the target change exactly as predicted?
+
+```{r}
+
+test2 <- test
+test2[idx_to_get, satisfaction_level := 0.1]
+xgb.test.data2 = xgb.DMatrix(data.matrix(test2[,-'left']), missing = NA)
+showWaterfall(xgb.model = xgb.model, explainer = explainer, 
+              DMatrix = xgb.test.data2, data.matrix = data.matrix(test[,-'left']), 
+              idx = idx_to_get, type = "binary")
+
+```
+
+No!! The prediction takes another path now, so things change. Life is complex xD
+
+Anyway, this is simply awesome.
+
+Let's plot other interesting relationships. First of all, let's plot the relation between the value "Satisfaction Level" and the importance of the "Satisfaction Level" variable in the final classification:
+
+```{r}
+plot(test[,satisfaction_level], pred.breakdown[,satisfaction_level], cex=0.4,
+     pch=16, xlab = "Satisfaction Level", ylab = "Satisfaction Level impact on log-odds")
+```
+
+The higher the satisfaction level, the lower the probability of leaving the company. That makes sense! But the best thing is that we can see that the real relationship in not linear. This is also awesome :)
+
+We can do the same plot with the "Last evaluation" variable:
+
+```{r}
+plot(test[,last_evaluation], pred.breakdown[,last_evaluation], cex=0.4, pch=16, 
+     xlab = "Last evaluation", ylab = "Last evaluation impact on log-odds")
+```
+
+In this particular case, it would be great if we could add a color depending on the satisfaction level of the worker:
+
+```{r}
+cr <- colorRamp(c("blue", "red"))
+plot(test[,last_evaluation], pred.breakdown[,last_evaluation], 
+     col = rgb(cr(round(test[,satisfaction_level])), max=255), cex=0.4, pch=16, 
+     xlab = "Last evaluation", ylab = "Last evaluation impact on log-odds")
+```
+
+We see that good workers that are happy tend to leave the company, while happy bad workers tend to stay. That makes sense, but is a highly powerful insight!!!
+
+
+
+

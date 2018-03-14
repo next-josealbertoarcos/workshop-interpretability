@@ -1,0 +1,8 @@
+"0","```r
+xgb.test.data = xgb.DMatrix(data.matrix(test[,-'left']), missing = NA)
+xgb.preds = predict(xgb.model, xgb.test.data)
+xgb.roc_obj <- roc(test[,left], xgb.preds)
+cat(\"XGB AUC \", auc(xgb.roc_obj))
+```"
+"1","XGB AUC  0.9189195
+"

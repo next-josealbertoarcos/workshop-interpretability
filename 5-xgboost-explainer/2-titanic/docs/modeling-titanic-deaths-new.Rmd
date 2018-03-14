@@ -1,0 +1,129 @@
+---
+title: "Modeling Titanic deaths"
+output: html_notebook
+---
+
+# Abstract
+
+In this document I will explain the predictions of our XGBoost model using the great XGBoost Explainer package. More info about the package can be found in [this great article](https://medium.com/applied-data-science/new-r-package-the-xgboost-explainer-51dd7d1aa211) or in its [Gihub repo](https://github.com/AppliedDataSciencePartners/xgboostExplainer/tree/master/R).
+
+Let's begin!
+
+
+<br><br>
+
+# Load libraries and read data
+
+```{r message=FALSE}
+library(data.table)
+library(xgboost)
+library(xgboostExplainer)
+library(magrittr)
+library(ggplot2)
+library(Matrix)
+```
+
+```{r}
+load("../../../0-model-to-explain/xgboost-titanic.RData")
+```
+
+<br><br>
+
+# Explain some predictions
+
+Until now, we could only extract the general feature importance:
+
+```{r}
+col_names <- colnames(preprocessed_training_set)
+col_names[col_names == "male"] <- "Sex"
+imp <- xgb.importance(col_names, xgb_model)
+xgb.plot.importance(imp)
+```
+
+But now we can go much further!!  We are able to explain why the XGBoost model made a particular prediction.
+
+Let's build the explainer:
+
+```{r}
+training_set_xgb <- xgb.DMatrix(data = preprocessed_training_set,
+                                label = training_set$Survived)
+explainer <- buildExplainer(xgb.model = xgb_model, 
+                            trainingData = training_set_xgb,
+                            type = "binary")
+```
+
+Let's plot some waterfalls:
+
+```{r}
+test_set_xgb <- xgb.DMatrix(data = preprocessed_test_set)
+showWaterfall(xgb.model = xgb_model, explainer = explainer, DMatrix = test_set_xgb,
+              data.matrix = preprocessed_test_set, idx = 1, type = "binary", threshold = 0.1) +
+  theme_minimal()
+```
+
+The first interesting thing to note is the intercept. As most of the passegers died, there is an intercept of sigmoid(-0.71), equivalent to a 0.33 probability of surviving. So, for a passenger whom we don't know anything about, the best estimate we can make is that his probability of surviving is 0.33.
+
+For this particular case, we see that a low ticket fare makes the passenger much more probable to die (mean ticker fare = 33.28). He is also a man, and not too young, so he almost surely died.
+
+Another interesting detail is the "other" bar. We can set a threshold in **showWaterfall** so that any feature with influence less than the threshold won't be shown, and will be grouped in the *other* column.
+
+Let's explain other passenger's prediction:
+
+```{r}
+showWaterfall(xgb.model = xgb_model, explainer = explainer, DMatrix = test_set_xgb,
+              data.matrix = preprocessed_test_set, idx = 2, type = "binary", threshold = 0.1)
+```
+
+In this case we have a woman. She travels in 3rd class, but being a woman and being young probably saved her (id did, according to our model). It is interesting (and strange) to see that, in this particular case, a low Fare helped her to survive.
+
+An interesting detail is that in this case, a Fare of 7 makes the probability of living to increase, while in the previous passenger a higher Fare (7.8) made the probability of living to decrease. The influence of a feature may depend on the value of other features. Sometimes this behavior will be correct, sometimes not. Fortunately, we are able to explore the effect of any variable in the influence of other. Let's try this with the Fare variable:
+
+```{r}
+prediction_breakdown <- explainPredictions(xgb.model = xgb_model,
+                                           explainer = explainer,
+                                           data = preprocessed_test_set)
+```
+
+```{r}
+ggplot() +
+  geom_point(aes(test_set$Fare, prediction_breakdown$Fare)) +
+  geom_smooth(aes(test_set$Fare[test_set$Fare < 500], prediction_breakdown$Fare[test_set$Fare < 500])) +
+  labs(x = "Fare", y = "Influence of Fare in survival probability")
+```
+
+There is a clear relationship between the paid Fare and the influence of the Fare in survival probability, according to the model. The higher the Fare, the more positive the influence of Fare in the probability of surviving. At least until reaching a Fare of 100. After that, the influence is still positive, but Fare gets less important than other features.
+
+We can use this kind of plots to compare feature importance. Let's see the Age influence:
+
+```{r}
+ggplot() +
+  geom_point(aes(test_set$Age, prediction_breakdown$Age)) +
+  geom_smooth(aes(test_set$Age, prediction_breakdown$Age), method = "loess") +
+  labs(x = "Age", y = "Influence of Age in survival probability")
+```
+
+We see that the Age has a huge positive impact for people under 10, has a null mean impact between 20 and 40, and has a slight negative impact after 40.
+
+We can also see cross influence between variables. For example, we can see how Age influences the importance of Fare in survival probability:
+
+```{r}
+ggplot() +
+  geom_point(aes(test_set$Age, prediction_breakdown$Fare)) +
+  geom_smooth(aes(test_set$Age, prediction_breakdown$Fare), method = "loess") +
+  labs(x = "Age", y = "Influence of Fare in survival probability")
+```
+
+This means that Fare in only important in the survival probability for people that are older than 40. This is great, because it may help us take more concise decisions.
+
+```{r}
+ggplot() +
+  geom_point(aes(test_set$Age[test_set$Age < 70], 
+                 prediction_breakdown$male[test_set$Age < 70])) +
+  geom_smooth(aes(test_set$Age[test_set$Age < 70], 
+                  prediction_breakdown$male[test_set$Age < 70]),
+              method = "loess") +
+  labs(x = "Age", y = "Influence of Sex in survival probability")
+```
+
+We don't have enough data to extract conclusions. But this tool is great!!
+

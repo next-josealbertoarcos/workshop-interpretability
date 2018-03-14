@@ -1,0 +1,19 @@
+# Pasos seguidos para la resolución del criptograma navideño
+
+Lo primero que hice fue resolver el sudoku usando un programa. Supuse que el sudoku resuelto me daría alguna pista para desencriptar el texto. ¿Quizás algún tipo de sustitución de las letras del sudoku en el texto? 
+
+Soy científico de datos, y en mi día a día uso R todo el tiempo. Así que cargué el sudoku resuelto en R, y copié a mano (podíais no haber puesto una imagen ;) ) el texto a desencriptar. Hice todas las modificaciones usando R (adjunté el código con la solución).
+
+Luego me fijé en que cada "palabra" del texto a desencriptar tenía nueve letras y demasiadas consonantes. No tenía claro si cada "palabra" se transformaría en una sola letra, o en nueve letras del texto desencriptado.
+
+Luego me planteé qué tipo de información puede extraerse de un sudoku. La información principal que contiene un sudoku es un conjunto de permutaciones de nueve elementos. Por ejemplo, si hablamos de letras (A B C D E F G H I), cada fila, columna o cuadrado del sudoku contiene una permutación de esas letras. Casualmente, las letras del texto estaban agrupadas en grupos de nueve, así que tenía pinta de que había que usar la solución del sudoku para ordenar cada conjunto de nueve letras.
+
+Había cosas que no cuadraban todavía. Había 19 palabras de nueve letras. Y tenía 27 posibles permutaciones a aplicar (filas, columnas y cuadrados del sudoku). ¿Qué permutación aplicaría a cada palabra? Además, las palabras contenían demasiadas consonantes. Ninguna permutación podía dar sentido a aquello por sí misma.
+
+Estuve un rato atascado. Luego recordé que el viernes un compañero había calculado el número de veces que se repetía cada letra en el mensaje. Así que hice lo mismo. Había cinco letras que se repetían bastante más que las demás. ¿Y si se correspondiesen con las vocales? Probé a ojo y el único desfase que cuadraba con mi hipótesis era que hubiese un desplazamiento tal que la A pasase a ser la N. Así que deshice el supuesto desplazamiento, y las palabras resultantes, aunque desordenadas, tenían bastante mejor pinta. Concretamente, en la palabra 19 estaban todas las letras para formar la palabra NAVIDADES. Así supe que iba por buen camino.
+
+Tomé la palabra 19 como referencia, y le apliqué las 27 permutaciones que he comentado antes (filas, columnas y cuadrados), y ninguna dio resultado. Así que me atasqué de nuevo.
+
+Calculé a mano el orden que tendrían que tener las letras en esa última palabra. Había varias opciones (había letras repetidas, y no tenía claro si ponía NAVIDADES o ESNAVIDAD). Convertí el sudoku a numérico, cambiando A por 1, B por 2, etc. y pinté las dos cosas, una al lado de otra. Et voilà! Los números del primer cuadrado indicaban el orden de las letras para formar NAVIDADES. Al ser la palabra 19, supuse que cada uno de los nueve cuadrados ordenaría una palabra, en orden, y repitiendo al llegar a nueve. Es decir, que el cuadrado 1 ordenaría la palabra 1, la 10 y la 19. El cuadrado 2 ordenaría la palabra 2 y la 11, y así consecutivamente. ¡Y así es!
+
+Como nota adicional, el hecho de empezar directamente a trabajar con R hizo posible que hiciese todas estas pruebas. A mano habría sido una locura, y seguramente lo habría dado por imposible.

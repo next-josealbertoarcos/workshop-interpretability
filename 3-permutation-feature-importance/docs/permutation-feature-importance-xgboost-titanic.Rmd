@@ -1,0 +1,280 @@
+---
+title: "Permutation Feature Importance applied to XGBoost"
+author: "José Alberto Arcos Sánchez"
+date: "4 de enero de 2018"
+output: html_notebook
+---
+
+# Abstract
+
+In this document I will calculate the importance of each feature in a complex model (XGBoost) using **Permutation Feature Importance**. For more information about **Permutation Feature Importance**, go and read the great book [Interpretable Machine Learning](https://christophm.github.io/interpretable-ml-book/permutation-feature-importance.html).
+
+
+<br><br>
+
+# Load the model, the data and the needed packages
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(magrittr)
+
+load("../../0-model-to-explain/xgboost-titanic.RData")
+```
+
+
+<br><br>
+
+# Calculate base accuracy
+
+```{r}
+predictions_ref <- predict(xgb_model, preprocessed_test_set)
+predictions_ref <- as.integer(predictions_ref > 0.5)
+acc_ref <- 
+  sum(predictions_ref == test_set$survived, na.rm = TRUE) /
+  length(predictions_ref)
+acc_ref
+```
+
+
+
+<br><br>
+
+# Permute each feature and calculate accuracy
+
+## Function for continuous variables
+
+```{r}
+
+feature_importance <- function(feature_name, test_data, model,
+                               labels, n_permutations, acc_ref){
+  
+  importances <- numeric(n_permutations)
+  feat_index <- which(colnames(test_data) == feature_name)
+  
+  for(i in 1:n_permutations){
+    permutation <- sample(x = 1:nrow(test_data))
+    test_data[, feat_index] <- test_data[permutation, feat_index]
+    
+    predictions <- predict(model, test_data)
+    predictions <- as.integer(predictions > 0.5)
+    acc <- sum(predictions == labels, na.rm = TRUE) / length(predictions)
+    
+    importances[i] <- acc_ref - acc
+  }
+  
+  importances
+  
+}
+
+```
+
+## Function for Pclass
+
+```{r}
+
+feature_importance_pclass <- function(test_data, model, 
+                                      classes = test_set$Pclass, 
+                                      labels, n_permutations, acc_ref){
+  
+  importances <- numeric(n_permutations)
+  pclass2_index <- which(colnames(test_data) == "Pclass.2")
+  pclass3_index <- which(colnames(test_data) == "Pclass.3")
+  
+  for(i in 1:n_permutations){
+    class <- sample(classes) # class permutation
+    pclass2_permutation <- as.integer(class == 2)
+    pclass3_permutation <- as.integer(class == 3)
+    
+    test_data[, pclass2_index] <- pclass2_permutation
+    test_data[, pclass3_index] <- pclass3_permutation
+    
+    predictions <- predict(model, test_data)
+    predictions <- as.integer(predictions > 0.5)
+    acc <- sum(predictions == labels, na.rm = TRUE) / length(predictions)
+    
+    importances[i] <- acc_ref - acc
+  }
+  
+  importances
+  
+}
+
+```
+
+## Function for Embarked
+
+```{r}
+
+feature_importance_embarked <- function(test_data, model, 
+                                        classes = test_set$Embarked, 
+                                        labels, n_permutations, acc_ref){
+  
+  importances <- numeric(n_permutations)
+  embarkedC_index <- which(colnames(test_data) == "Embarked.C")
+  embarkedQ_index <- which(colnames(test_data) == "Embarked.Q")
+  embarkedS_index <- which(colnames(test_data) == "Embarked.S")
+  
+  for(i in 1:n_permutations){
+    class <- sample(classes) # class permutation
+    embarkedC_permutation <- as.integer(class == "C")
+    embarkedQ_permutation <- as.integer(class == "Q")
+    embarkedS_permutation <- as.integer(class == "S")
+    
+    test_data[, embarkedC_index] <- embarkedC_permutation
+    test_data[, embarkedQ_index] <- embarkedQ_permutation
+    test_data[, embarkedS_index] <- embarkedS_permutation
+    
+    predictions <- predict(model, test_data)
+    predictions <- as.integer(predictions > 0.5)
+    acc <- sum(predictions == labels, na.rm = TRUE) / length(predictions)
+    
+    importances[i] <- acc_ref - acc
+  }
+  
+  importances
+  
+}
+
+```
+
+## Age
+
+```{r}
+set.seed(23)
+age_importance <- 
+  feature_importance(feature_name = "Age",
+                     test_data = preprocessed_test_set,
+                     labels = test_set$survived,
+                     model = xgb_model,
+                     n_permutations = 400,
+                     acc_ref = acc_ref)
+
+age_importance
+```
+
+
+## Fare
+
+```{r}
+set.seed(23)
+fare_importance <- 
+  feature_importance(feature_name = "Fare",
+                     test_data = preprocessed_test_set,
+                     labels = test_set$survived,
+                     model = xgb_model,
+                     n_permutations = 400,
+                     acc_ref = acc_ref)
+
+fare_importance
+```
+
+
+## Sibilings
+
+```{r}
+set.seed(23)
+sibsp_importance <- 
+  feature_importance(feature_name = "SibSp",
+                     test_data = preprocessed_test_set,
+                     labels = test_set$survived,
+                     model = xgb_model,
+                     n_permutations = 400,
+                     acc_ref = acc_ref)
+
+sibsp_importance
+```
+
+
+## Sex
+
+```{r}
+set.seed(23)
+sex_importance <- 
+  feature_importance(feature_name = "male",
+                     test_data = preprocessed_test_set,
+                     labels = test_set$survived,
+                     model = xgb_model,
+                     n_permutations = 400,
+                     acc_ref = acc_ref)
+
+sex_importance
+```
+
+
+## Parch
+
+```{r}
+set.seed(23)
+parch_importance <- 
+  feature_importance(feature_name = "Parch",
+                     test_data = preprocessed_test_set,
+                     labels = test_set$survived,
+                     model = xgb_model,
+                     n_permutations = 400,
+                     acc_ref = acc_ref)
+
+parch_importance
+```
+
+
+# Pclass
+
+```{r}
+set.seed(23)
+pclass_importance <-
+  feature_importance_pclass(test_data = preprocessed_test_set,
+                            model = xgb_model,
+                            n_permutations = 400,
+                            labels = test_set$survived,
+                            acc_ref = acc_ref)
+pclass_importance
+```
+
+
+# Embarked
+
+```{r}
+set.seed(23)
+embarked_importance <-
+  feature_importance_embarked(test_data = preprocessed_test_set,
+                              model = xgb_model,
+                              n_permutations = 400,
+                              labels = test_set$survived,
+                              acc_ref = acc_ref)
+embarked_importance
+```
+
+
+# Results
+
+```{r}
+importance <- data.frame(Pclass = pclass_importance,
+                         Parch = parch_importance,
+                         Sex = sex_importance,
+                         SibSp = sibsp_importance, 
+                         Fare = fare_importance, 
+                         Age = age_importance,
+                         Embarked = embarked_importance)
+```
+
+```{r}
+importance <- tidyr::gather(data = importance, 
+                            key = "feature", 
+                            value = "importance")
+levels <- importance %>% 
+  group_by(feature) %>% 
+  summarise(median_importance = median(importance)) %>% 
+  arrange(median_importance) %>% .$feature
+  
+importance$feature <- factor(x = importance$feature, 
+                             levels = levels)
+```
+
+```{r}
+ggplot(data = importance, mapping = aes(x = feature, y = importance)) +
+  geom_boxplot(fill = "green") +
+  geom_hline(yintercept = 0, color = "red", linetype = "dotted") +
+  coord_flip() + 
+  theme_minimal()
+```

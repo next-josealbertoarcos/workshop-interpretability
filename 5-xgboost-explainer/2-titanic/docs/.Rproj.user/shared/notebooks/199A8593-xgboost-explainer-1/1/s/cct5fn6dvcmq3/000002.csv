@@ -1,0 +1,5 @@
+"0","```r
+idx_to_get = 802L
+# idx_to_get = 57L
+test[idx_to_get,-\"left\"]
+```"

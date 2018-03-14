@@ -1,0 +1,42 @@
+library(tidyverse)
+
+criptograma <- c("ibrrgqeaq", "rbgvafanr", "rfznnngfe",
+                 "pqbpcrfvr", "aenbycnbq", "hffpfdnbr", 
+                 "bvfrpquav", "efrcydnbh", "gdprhvufv", 
+                 "hhnfvrdfr", "ynnygzfnr", "neennnegf", 
+                 "bnaviycrf", "gfbvvybnf", "rfgrfihay", 
+                 "fkbncerny", "qprarffnh", "mhreosrvy", 
+                 "fnnrvaqiq")
+
+criptograma_split <- map(criptograma, ~ str_split(., pattern = "") %>% unlist())
+
+raw_sudoku <- "FCHIDEABGEGBCAHDIFIDAGBFHCEGBFACIEDHAIEHFDCGBDHCBEGFAIHAGFICBEDBEIDHAGFCCFDEGBIHA"
+sudoku <- matrix(data = unlist(str_split(string = raw_sudoku, pattern = "")), nrow = 9, byrow = TRUE)
+
+# Reorder using row and column permutations
+row_orders <- map(1:9, ~ order(sudoku[.,]))
+col_orders <- map(1:9, ~ order(sudoku[,.]))
+square_orders <- 
+
+criptograma_rows <- map2(criptograma_split[1:18], c(row_orders, row_orders), ~ .x[.y])
+criptograma_cols <- map2(criptograma_split[1:18], c(col_orders, col_orders), ~ .x[.y])
+
+
+# Letter density
+all_letters <- unlist(criptograma_split)
+table(all_letters)
+
+
+# Convert characters to raw
+criptograma_rows_raw <- map(criptograma_rows, ~ map(.x, charToRaw) %>% unlist())
+criptograma_cols_raw <- map(criptograma_cols, ~ map(.x, charToRaw) %>% unlist())
+
+# Move one to the left?
+solution_rows_left <- map(criptograma_rows_raw, function(x){
+  val <- as.integer(x) - 1
+  val[val == 60] <- 122
+  print(x)
+  print(val)
+  print(as.raw(val))
+  rawToChar(as.raw(val))
+})

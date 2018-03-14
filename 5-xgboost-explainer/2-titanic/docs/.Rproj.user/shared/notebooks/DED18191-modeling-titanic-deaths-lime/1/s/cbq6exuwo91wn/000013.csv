@@ -1,0 +1,378 @@
+"0","explanation <- explain(test, 
+                       explainer, 
+                       n_labels = 1, 
+                       n_features = 4)
+"
+"1","debugging in: "
+"1","explain(test, explainer, n_labels = 1, n_features = 4)
+"
+"1","debug: "
+"1","{
+"
+"1","    UseMethod(""explain"")
+"
+"1","}
+"
+"0","s"
+"1","debug: "
+"1","UseMethod(""explain"")
+"
+"0","s"
+"1","debugging in: "
+"1","explain.data.frame(test, explainer, n_labels = 1, n_features = 4)
+"
+"1","debug: "
+"1","{
+"
+"1","    assert_that(is.data_frame_explainer(explainer))
+"
+"1","    m_type <- model_type(explainer)
+"
+"1","    o_type <- output_type(explainer)
+"
+"1","    if (m_type == ""regression"") {
+"
+"1","        if (!is.null(labels) || !is.null(n_labels)) {
+"
+"1","            warning(""\\""labels\\"" and \\""n_labels\\"" arguments are ignored when explaining regression models"")
+"
+"1","        }
+"
+"1","        n_labels <- 1
+"
+"1","        labels <- NULL
+"
+"1","    }
+"
+"1","    assert_that(is.null(labels) + is.null(n_labels) == 1, msg = ""You need to choose between labels and n_labels parameters."")
+"
+"1","    assert_that(is.count(n_features))
+"
+"1","    assert_that(is.count(n_permutations))
+"
+"1","    if (is.null(kernel_width)) {
+"
+"1","        kernel_width <- sqrt(ncol(x)) * 0.75
+"
+"1","    }
+"
+"1","    kernel <- exp_kernel(kernel_width)
+"
+"1","    case_perm <- permute_cases(x, n_permutations, explainer$feature_distribution, 
+"
+"1","        explainer$bin_continuous, explainer$bin_cuts)
+"
+"1","    case_res <- predict_model(explainer$model, case_perm, type = o_type)
+"
+"1","    case_ind <- split(seq_len(nrow(case_perm)), rep(seq_len(nrow(x)), 
+"
+"1","        each = n_permutations))
+"
+"1","    res <- lapply(seq_along(case_ind), function(ind) {
+"
+"1","        i <- case_ind[[ind]]
+"
+"1","        perms <- numerify(case_perm[i, ], explainer$feature_type, 
+"
+"1","            explainer$bin_continuous, explainer$bin_cuts)
+"
+"1","        dist <- c(0, dist(feature_scale(perms, explainer$feature_distribution, 
+"
+"1","            explainer$feature_type, explainer$bin_continuous), 
+"
+"1","            method = dist_fun)[seq_len(n_permutations - 1)])
+"
+"1","        res <- model_permutations(as.matrix(perms), case_res[i, 
+"
+"1","            , drop = FALSE], kernel(dist), labels, n_labels, 
+"
+"1","            n_features, feature_select)
+"
+"1","        res$feature_value <- unlist(case_perm[i[1], res$feature])
+"
+"1","        res$feature_desc <- describe_feature(res$feature, case_perm[i[1], 
+"
+"1","            ], explainer$feature_type, explainer$bin_continuous, 
+"
+"1","            explainer$bin_cuts)
+"
+"1","        guess <- which.max(abs(case_res[i[1], ]))
+"
+"1","        res$case <- rownames(x)[ind]
+"
+"1","        res$label_prob <- unname(as.matrix(case_res[i[1], ]))[match(res$label, 
+"
+"1","            colnames(case_res))]
+"
+"1","        res$data <- list(as.list(case_perm[i[1], ]))
+"
+"1","        res$prediction <- list(as.list(case_res[i[1], ]))
+"
+"1","        res$model_type <- m_type
+"
+"1","        res
+"
+"1","    })
+"
+"1","    res <- do.call(rbind, res)
+"
+"1","    res <- res[, c(""model_type"", ""case"", ""label"", ""label_prob"", 
+"
+"1","        ""model_r2"", ""model_intercept"", ""model_prediction"", ""feature"", 
+"
+"1","        ""feature_value"", ""feature_weight"", ""feature_desc"", ""data"", 
+"
+"1","        ""prediction"")]
+"
+"1","    if (m_type == ""regression"") {
+"
+"1","        res$label <- NULL
+"
+"1","        res$label_prob <- NULL
+"
+"1","        res$prediction <- unlist(res$prediction)
+"
+"1","    }
+"
+"1","    res
+"
+"1","}
+"
+"0","n"
+"1","debug: "
+"1","assert_that(is.data_frame_explainer(explainer))
+"
+"1","debug: "
+"1","m_type <- model_type(explainer)
+"
+"1","debug: "
+"1","o_type <- output_type(explainer)
+"
+"1","debug: "
+"1","if (m_type == ""regression"") {
+"
+"1","    if (!is.null(labels) || !is.null(n_labels)) {
+"
+"1","        warning(""\\""labels\\"" and \\""n_labels\\"" arguments are ignored when explaining regression models"")
+"
+"1","    }
+"
+"1","    n_labels <- 1
+"
+"1","    labels <- NULL
+"
+"1","}
+"
+"1","debug: "
+"1","assert_that(is.null(labels) + is.null(n_labels) == 1, msg = ""You need to choose between labels and n_labels parameters."")
+"
+"1","debug: "
+"1","assert_that(is.count(n_features))
+"
+"1","debug: "
+"1","assert_that(is.count(n_permutations))
+"
+"1","debug: "
+"1","if (is.null(kernel_width)) {
+"
+"1","    kernel_width <- sqrt(ncol(x)) * 0.75
+"
+"1","}
+"
+"1","debug: "
+"1","kernel_width <- sqrt(ncol(x)) * 0.75
+"
+"1","debug: "
+"1","kernel <- exp_kernel(kernel_width)
+"
+"1","debug: "
+"1","case_perm <- permute_cases(x, n_permutations, explainer$feature_distribution, 
+"
+"1","    explainer$bin_continuous, explainer$bin_cuts)
+"
+"1","debug: "
+"1","case_res <- predict_model(explainer$model, case_perm, type = o_type)
+"
+"0","s"
+"1","debugging in: "
+"1","predict_model(explainer$model, case_perm, type = o_type)
+"
+"1","debug: "
+"1","{
+"
+"1","    UseMethod(""predict_model"")
+"
+"1","}
+"
+"0","s"
+"1","debug: "
+"1","UseMethod(""predict_model"")
+"
+"1","debugging in: "
+"1","predict_model.xgb.Booster(explainer$model, case_perm, type = o_type)
+"
+"1","debug: "
+"1","{
+"
+"1","    if (!requireNamespace(""xgboost"", quietly = TRUE)) {
+"
+"1","        stop(""The xgboost package is required for predicting xgboost models"")
+"
+"1","    }
+"
+"1","    if (is.data.frame(newdata)) {
+"
+"1","        newdata <- xgboost::xgb.DMatrix(as.matrix(newdata))
+"
+"1","    }
+"
+"1","    p <- data.frame(predict(x, newdata = newdata, reshape = TRUE, 
+"
+"1","        ...), stringsAsFactors = FALSE)
+"
+"1","    if (type == ""raw"") {
+"
+"1","        names(p) <- ""Response""
+"
+"1","    }
+"
+"1","    else if (type == ""prob"") {
+"
+"1","        if (ncol(p) == 1) {
+"
+"1","            names(p) = ""1""
+"
+"1","            p[[""0""]] <- 1 - p[[""1""]]
+"
+"1","        }
+"
+"1","        else {
+"
+"1","            names(p) <- as.character(seq_along(p))
+"
+"1","        }
+"
+"1","    }
+"
+"1","    p
+"
+"1","}
+"
+"0","n"
+"1","debug: "
+"1","if (!requireNamespace(""xgboost"", quietly = TRUE)) {
+"
+"1","    stop(""The xgboost package is required for predicting xgboost models"")
+"
+"1","}
+"
+"1","debug: "
+"1","if (is.data.frame(newdata)) {
+"
+"1","    newdata <- xgboost::xgb.DMatrix(as.matrix(newdata))
+"
+"1","}
+"
+"0","str(newdata)"
+"1","'data.frame':	"
+"1","2090000"
+"1"," obs. of  "
+"1","7"
+"1"," variable"
+"1","s"
+"1",":"
+"1","
+"
+"1"," "
+"1","$ "
+"1","Pclass  "
+"1",":"
+"1"," Factor w/ 3 levels ""1"",""2"",""3"": "
+"1","3 1 1 1 2 1 1 3 1 1"
+"1"," ..."
+"1","
+"
+"1"," "
+"1","$ "
+"1","Sex     "
+"1",":"
+"1"," Factor w/ 2 levels ""female"",""male"": "
+"1","2 2 2 2 2 2 1 2 2 1"
+"1"," ..."
+"1","
+"
+"1"," "
+"1","$ "
+"1","Age     "
+"1",":"
+"1"," num  "
+"1","34.5 37.1 61.8 35.9 19.9"
+"1"," ..."
+"1","
+"
+"1"," "
+"1","$ "
+"1","SibSp   "
+"1",":"
+"1"," int  "
+"1","0 1 2 1 1 2 1 0 1 2"
+"1"," ..."
+"1","
+"
+"1"," "
+"1","$ "
+"1","Parch   "
+"1",":"
+"1"," int  "
+"1","0 0 3 1 1 2 1 1 0 1"
+"1"," ..."
+"1","
+"
+"1"," "
+"1","$ "
+"1","Fare    "
+"1",":"
+"1"," num  "
+"1","7.83 27.53 51.78 108.86 119.48"
+"1"," ..."
+"1","
+"
+"1"," "
+"1","$ "
+"1","Embarked"
+"1",":"
+"1"," Factor w/ 4 levels """",""C"",""Q"",""S"": "
+"1","3 2 3 4 4 4 4 4 3 2"
+"1"," ..."
+"1","
+"
+"0","str(as.matrix(newdata))"
+"1"," chr [1:2090000, 1:7] "
+"1","""3"" ""1"" ""1"" ""1"" ""2"" ""1"" ""1"" ""3"" ""1"" ""1"" ""2"" ""3"" ""1"" ""3"" ""2"" ""3"" ""2"""
+"1"," ..."
+"1","
+"
+"1"," "
+"1","- attr(*, ""dimnames"")="
+"1","List"
+"1"," of "
+"1","2"
+"1","
+"
+"1","  .."
+"1","$ "
+"1",":"
+"1"," NULL
+"
+"1","  .."
+"1","$ "
+"1",":"
+"1"," chr [1:7] "
+"1","""Pclass"" ""Sex"" ""Age"" ""SibSp"""
+"1"," ..."
+"1","
+"
+"0","xgboost::xgb.DMatrix(as.matrix(newdata))"
+"2","Error in xgboost::xgb.DMatrix(as.matrix(newdata)) : 
+  [13:20:21] amalgamation/../dmlc-core/src/io/local_filesys.cc:66: LocalFileSystem.GetPathInfo 3 Error:No existe el archivo o el directorio
+"

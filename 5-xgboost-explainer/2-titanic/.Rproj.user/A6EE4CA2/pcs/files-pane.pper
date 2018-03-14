@@ -1,0 +1,9 @@
+{
+    "path" : "~/poc-interpretability/xgboost-explainer/2-titanic/docs",
+    "sortOrder" : [
+        {
+            "ascending" : true,
+            "columnIndex" : 2
+        }
+    ]
+}

@@ -1,0 +1,195 @@
+---
+title: "Modeling Titanic deaths (LIME)"
+output: html_notebook
+---
+
+# Abstract
+
+In this document I will try to create an XGBoost model to predict which passengers will die in the sinking of the Titanic. 
+
+Then I will explain the predictions using LIME, and compare results with the results from those generated with XGBoost Explainer.
+
+Let's begin!
+
+
+<br><br>
+
+# Load libraries and read data
+
+```{r message=FALSE}
+library(data.table)
+library(mlr)
+library(lime)
+library(magrittr)
+library(ggplot2)
+```
+
+```{r}
+train <- fread("../data/train.csv")
+test  <- fread("../data/test.csv")
+```
+
+
+# Clean and transform data
+
+Create factor features and remove non-important (or too complex) ones:
+
+```{r}
+
+train[, Pclass := as.factor(Pclass)]
+test[, Pclass := as.factor(Pclass)]
+
+train[, Sex := as.factor(Sex)]
+test[, Sex := as.factor(Sex)]
+
+train[, Embarked := as.factor(Embarked)]
+test[, Embarked := as.factor(Embarked)]
+
+train[, PassengerId := NULL]
+test[, PassengerId := NULL]
+
+train[, Name := NULL]
+test[, Name := NULL]
+
+train[, Ticket := NULL]
+test[, Ticket := NULL]
+
+train[, Cabin := NULL]
+test[, Cabin := NULL]
+```
+
+
+<br><br>
+
+# Create model
+
+```{r}
+
+imputation <- impute(train, 
+                     cols = list(Age = imputeLearner(learner = "regr.fnn",
+                                                     features = c("Pclass", "Sex", "Fare", "Embarked"))))
+
+
+classification_task <- 
+  makeClassifTask(id = "titanic", 
+                  data = train, 
+                  target = "Survived", 
+                  positive = "1") %>% 
+  mergeSmallFactorLevels(new.level = "other") %>% 
+  impute(classes = list(numeric = imputeMedian(), factor = imputeMode())) %>% 
+  createDummyFeatures() %>% 
+  removeConstantFeatures()
+
+```
+
+```{r}
+
+```
+
+
+
+# Create XGBoost model
+
+Hyperparameter selection:
+
+```{r}
+n_trials <- 20
+
+max_depth_range <- 3:10
+eta_range <- seq(from = 0.1, to = 1, by = 0.1)
+
+max_depth_sample <- sample(x = max_depth_range, size = n_trials, replace = TRUE)
+eta_sample <- sample(x = eta_range, size = n_trials, replace = TRUE)
+
+results <- list()
+for(i in 1:n_trials){
+  cv <- xgb.cv(params = list(booster = "gbtree",
+                             eta = eta_sample[i], 
+                             max_depth = max_depth_sample[i],
+                             objective = "binary:logistic"),
+               data = xgb_train,
+               nrounds = 100,
+               early_stopping_rounds = 5,
+               nfold = 4,
+               metrics = "error")
+  results <- append(results, list(cv$evaluation_log[cv$best_iteration,]))
+  cat("Iteration", i, "finished")
+}
+```
+
+```{r}
+df_results <- do.call(rbind, results) %>% as.data.frame()
+best_iteration <- which.min(df_results$test_error_mean)
+best_max_depth <- max_depth_sample[best_iteration]
+best_eta <- eta_sample[best_iteration]
+
+cv <- xgb.cv(params = list(booster = "gbtree",
+                           eta = best_eta, 
+                           max_depth = best_max_depth,
+                           objective = "binary:logistic"),
+             data = xgb_train,
+             nrounds = 300,
+             early_stopping_rounds = 5,
+             nfold = 5)
+```
+
+```{r}
+best_nrounds <- cv$best_iteration
+```
+
+
+<br><br>
+
+# Train model
+
+```{r}
+model <- xgb.train(params = list(booster = "gbtree",
+                                 eta = best_eta, 
+                                 max_depth = best_max_depth,
+                                 objective = "binary:logistic"),
+                   data = xgb_train,
+                   nrounds = best_nrounds)
+```
+
+
+<br><br>
+
+# Predict test
+
+```{r}
+predictions <- as.numeric(predict(model, xgb_test) > 0.5)
+```
+
+<br><br>
+
+# Explain some predictions
+
+Until now, we could only extract the general feature importance:
+
+```{r}
+col_names = attr(xgb_train, ".Dimnames")[[2]]
+imp = xgb.importance(col_names, model)
+xgb.plot.importance(imp)
+```
+
+But now we can go much further!!
+
+Let's build the explainer. LIME needs data without response variable:
+
+```{r}
+
+explainer <- lime(train, 
+                  model, 
+                  bin_continuous = TRUE, 
+                  quantile_bins = FALSE)
+
+explanation <- explain(test, 
+                       explainer, 
+                       n_labels = 1, 
+                       n_features = 4)
+
+
+View(explanation)
+debug(lime)
+```
+

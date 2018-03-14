@@ -1,0 +1,198 @@
+---
+title: "Partial Dependence Plots to understand XGBoost"
+output: html_notebook
+---
+
+<br><br>
+
+## Abstract
+
+In this document I will show you how to use **Partial Dependence Plot** to better understand what a complex model is doing. The partial dependence plot shows the marginal effect of a feature on the predicted outcome (J. H. Friedman 2001). A partial dependence plot can show if the relationship between the target and a feature is linear, monotonic or something else. If you want to know more about partial dependence plots, look at the great [Interpretable Machine Learning](https://christophm.github.io/interpretable-ml-book/pdp.html) book.
+
+I will use the R [pdp](https://github.com/bgreenwell/pdp) package to calculate and plot the **Partial Dependence Plot**.
+
+<br><br>
+
+## Loading the model and the needed packages
+
+```{r}
+library(pdp)
+library(magrittr)
+library(ggplot2)
+
+load("../../0-model-to-explain/xgboost-titanic.RData")
+
+set.seed(22)
+```
+
+
+<br><br>
+
+## Calculate and plot Partial Dependence Plots of interest
+
+We can choose to treat features individually or to combine two or three of them to see the combined influence in the output **as the model sees it**.
+
+<br>
+
+### Age
+
+Let's start by analysing how the model thinks that the age affects the probability of surviving:
+
+```{r}
+pd <- partial(object = xgb_model, 
+              pred.var = c("Age"), 
+              type = "classification",
+              chull = TRUE, 
+              prob = TRUE,
+              smooth = TRUE,
+              train = preprocessed_training_set,
+              plot = FALSE,
+              grid.resolution = 16)
+pd
+
+ggplot(pd) +
+  geom_line(aes(x = Age, y = yhat)) + 
+  geom_hline(yintercept = 0.5, color = "red") +
+  labs(title = "Age influence", x = "age", y = "predicted probability of surviving") +
+  theme_minimal()
+```
+
+Well, that makes sense. According to the model, the age has a strong impact in the survival probability for children under 10. For the rest of the passengers, the older the passenger, the higher the probability of dying.
+
+<br>
+
+### Fare
+
+Let's now analyse how the model thinks that the fare affects the probability of surviving:
+
+```{r}
+pd <- partial(object = xgb_model, 
+              pred.var = c("Fare"), 
+              type = "classification",
+              chull = TRUE, 
+              prob = TRUE,
+              train = preprocessed_training_set,
+              plot = FALSE,
+              smooth = TRUE)
+ggplot(pd) +
+  geom_line(aes(x = Fare, y = yhat)) + 
+  geom_hline(yintercept = 0.5, color = "red") +
+  labs(title = "Fare influence", x = "fare", y = "predicted probability of surviving") +
+  theme_minimal()
+```
+
+This is a bit strange. The influence of the fare between 0 and 120 makes sense. The more you pay, the more probable it is that you survive (we all know what happened). But there is a kind of gap between 120 and 250, where the probability of dying increases strongly. Why? Is this something real (maybe the rooms within that range of fares were in a bad positioned place in the Titanic)? Or is this something about the model? Maybe we don't have enough data in that fare range and the model is overfitting.
+
+
+```{r}
+ggplot(training_set) + geom_histogram(mapping = aes(x = Fare), binwidth = 50)
+```
+
+There are few data points over 150, and almost none over 250. So, it is ok that the Fare influence is almost null over 250 according to the model.
+
+We could go on digging, but this is out of the scope of this document. The great thing is that this is a good way of having general insights about what the model is doing.
+
+
+## Sex
+
+Let's try to do the same with a cathegorical variable:
+
+```{r}
+sex_pd <- partial(object = xgb_model, 
+                  pred.var = c("male"), 
+                  type = "classification",
+                  chull = TRUE, 
+                  prob = TRUE,
+                  train = preprocessed_training_set,
+                  plot = FALSE,
+                  smooth = TRUE,
+                  cats = c("male"))
+
+sex_pd
+```
+
+We can clearly see the global trend affecting sex.
+
+<br><br>
+
+# Multiple variables
+
+What if we want to see how two features interact with each other and with our target variable according to the model? We can plot a 2D heat map like this:
+
+```{r}
+pd <- partial(object = xgb_model, 
+              pred.var = c("Age", "Fare"), 
+              type = "classification",
+              chull = TRUE, 
+              prob = TRUE,
+              smooth = TRUE,
+              grid.resolution = 20,
+              train = preprocessed_training_set,
+              plot = FALSE)
+
+colnames(pd)[colnames(pd) == "yhat"] <- "survival_prob"
+
+ggplot(pd) +
+  geom_tile(mapping = aes(x = Age, y = Fare, fill = survival_prob)) +
+  scale_fill_gradient2(midpoint = 0.5, low = "red", mid = "white", high = "green") +
+  theme_minimal()
+```
+
+We see some interesting patterns here. For example, there is a strange sector with a very low Fare value and Ages between 18 and 30 where the model predicts survival. Why?
+
+We could do something like:
+
+```{r}
+training_set %>% dplyr::filter(Fare < 10 & Age > 15 & Age < 30) %>% dplyr::select(Survived) %>% table
+```
+
+But we have to remember that we are isolating the effect of Fare and Age. This means that the model might explain those deads using other variable values, but somehow it thinks that this sector has higher probability of surviving. This may or may not be true, and should be investigated.
+
+Let's plot now Age vs Sex to finish this document:
+
+```{r}
+sex_age_pd <- partial(object = xgb_model, 
+                      pred.var = c("Age", "male"), 
+                      type = "classification",
+                      prob = TRUE,
+                      smooth = FALSE,
+                      cats = "male",
+                      train = preprocessed_training_set,
+                      plot = FALSE)
+
+colnames(sex_age_pd)[colnames(sex_age_pd) == "yhat"] <- "survival_prob"
+
+ggplot(sex_age_pd) +
+  geom_tile(mapping = aes(x = Age, y = male, fill = survival_prob)) +
+  scale_fill_gradient2(midpoint = 0.5, low = "red", mid = "white", high = "green") +
+  theme_minimal()
+```
+
+It is difficult to create a plot better than this one to show how the model thinks that Age and Sex influence the survival probabilities.
+
+# 3D plot
+
+```{r}
+sex_age_fare_pd <- partial(object = xgb_model, 
+                           pred.var = c("Age", "Fare", "SibSp"), 
+                           type = "classification",
+                           prob = TRUE,
+                           smooth = FALSE,
+                           cats = "male",
+                           train = preprocessed_training_set,
+                           plot = FALSE)
+
+colnames(sex_age_fare_pd)[colnames(sex_age_pd) == "yhat"] <- "survival_prob"
+```
+
+```{r}
+library(plotly)
+
+p <- plot_ly(sex_age_fare_pd, x = ~Age, y = ~Fare, z = ~SibSp, color = ~survival_prob, colors = c('#FF0000', '#00FF00')) %>%
+  add_markers() %>%
+  layout(scene = list(xaxis = list(title = 'Age'),
+                     yaxis = list(title = 'Fare'),
+                     zaxis = list(title = 'SibSp')))
+```
+
+

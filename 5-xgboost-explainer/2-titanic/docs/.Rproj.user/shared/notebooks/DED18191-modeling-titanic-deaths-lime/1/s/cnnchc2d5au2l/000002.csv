@@ -1,0 +1,3 @@
+"0","col_names = attr(xgb_train, "".Dimnames"")[[2]]"
+"0","imp = xgb.importance(col_names, model)"
+"0","xgb.plot.importance(imp)"

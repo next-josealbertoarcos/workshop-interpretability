@@ -1,0 +1,267 @@
+---
+title: "Modeling Titanic deaths (LIME)"
+output: html_notebook
+---
+
+# Abstract
+
+In this document I will create an XGBoost model to predict which passengers will die in the sinking of the Titanic. 
+
+Then I will explain the predictions using LIME, and compare results with the results from those generated with XGBoost Explainer.
+
+Let's begin!
+
+
+<br><br>
+
+# Load libraries, model and data
+
+```{r}
+library(lime)
+library(magrittr)
+library(tidyverse)
+library(xgboostExplainer)
+
+load("../../../0-model-to-explain/xgboost-titanic.RData")
+
+set.seed(22)
+```
+
+
+# Explain predictions
+
+Create an explainer:
+
+```{r}
+explainer <- lime(x = dplyr::select(training_set, -Survived),
+                  model = model)
+```
+
+Explain new observations:
+
+```{r}
+explanation <- 
+  lime::explain(x = test_set[1,], 
+                explainer = explainer,
+                feature_select = "auto",
+                n_labels = 1,
+                n_features = 4,
+                n_permutations = 100)
+
+plot_features(explanation)
+```
+
+IMPORTANT:
+
+The explanation process is stochastic, so if n_permutations is not big enough, results will vary between executions. For example, if we repeat exactly the same code than before, we obtain:
+
+```{r}
+explanation <- 
+  lime::explain(x = test_set[1,], 
+                explainer = explainer,
+                feature_select = "auto",
+                n_labels = 1,
+                n_features = 4,
+                n_permutations = 100)
+
+plot_features(explanation)
+```
+
+A totally different result!!! OMG!!
+
+Let's look for a value of n_permutations to do this process stable. Let's try the default value (5000):
+
+```{r}
+explanation <- 
+  lime::explain(x = test_set[1,], 
+                explainer = explainer,
+                feature_select = "auto",
+                n_labels = 1,
+                n_features = 4,
+                n_permutations = 15000)
+
+plot_features(explanation)
+```
+
+It looks quite stable!
+
+Let's try and change the number of features to use for the explanation to see if the result is coherent:
+
+```{r}
+explanation <- 
+  lime::explain(x = test_set[1,], 
+                explainer = explainer,
+                feature_select = "auto",
+                n_labels = 1,
+                n_features = 6,
+                n_permutations = 15000)
+
+plot_features(explanation)
+```
+
+Wow! That's not nice. The result depends on the number of features we use to explain the model. Mmmm.
+
+```{r}
+explanation <- 
+  lime::explain(x = test_set[1,], 
+                explainer = explainer,
+                feature_select = "auto", # none here does not work!
+                n_labels = 1,
+                n_features = 7, # all features
+                n_permutations = 15000)
+
+plot_features(explanation)
+```
+
+The more features we use, the more permutations we should perform in order to get a stable result.
+
+
+
+# Explaining the model globally
+
+We can get an intuition of what the model is doing by looking at the explanation of some strategically selected predictions:
+
+```{r}
+View(test_set)
+
+selected_predictions <- c(1, 2, 6, 202, 56, 121)
+
+explanation <- 
+  lime::explain(x = test_set[selected_predictions,], 
+                explainer = explainer,
+                feature_select = "auto", # none here does not work!
+                n_labels = 1,
+                n_features = 7, # all features
+                n_permutations = 10000)
+
+plot_features(explanation)
+```
+
+
+We can also get a global undestanding of what the model is doing by explaining all the test set and plot how each feature affects the output for all the predictions:
+
+```{r}
+explanation <- 
+  lime::explain(x = test_set, 
+                explainer = explainer,
+                feature_select = "auto", # none here does not work!
+                n_labels = 1,
+                n_features = 7, # all features
+                n_permutations = 10000)
+
+plot_explanations(explanation)
+```
+
+This plot is great as a general visualization of what the model is doing.
+
+And, of course, we can select customized data to plot:
+
+```{r}
+head(explanation)
+```
+
+```{r}
+ggplot(explanation %>% dplyr::filter(feature == "Age")) +
+  geom_point(aes(x = feature_value, y = feature_weight, color = label)) + 
+  theme_minimal() +
+  labs(x = "Age", y = "Age influence on survival probability")
+```
+
+```{r}
+ggplot(explanation %>% dplyr::filter(feature == "Fare")) +
+  geom_point(aes(x = feature_value, y = feature_weight, color = label), alpha = 0.2) + 
+  geom_smooth(aes(x = feature_value, y = feature_weight, color = label)) +
+  theme_minimal() +
+  labs(x = "Fare", y = "Fare influence on survival probability")
+```
+
+```{r}
+ggplot(explanation %>% dplyr::filter(feature == "Pclass")) +
+  geom_jitter(aes(x = feature_value, y = feature_weight, color = label)) + 
+  theme_minimal() +
+  labs(x = "Pclass", y = "Pclass influence on survival probability")
+```
+
+We can also represent cross influences between features:
+
+```{r}
+pclass_index <- explanation$feature == "Pclass"
+x_age <- purrr::map_dbl(explanation$data[pclass_index], "Age")
+ggplot(explanation %>% dplyr::filter(feature == "Pclass")) +
+  geom_point(aes(x = x_age, y = feature_weight, color = label)) + 
+  theme_minimal() +
+  labs(x = "Age", y = "Pclass influence on survival probability")
+```
+
+But this is not very intuitive or easy to interpret...
+
+
+# Extra: change the colors of the plot_explanations function (they are not well choosen)
+
+```{r}
+plot_explanations <- function (explanation, ...) 
+{
+    num_cases <- unique(suppressWarnings(as.numeric(explanation$case)))
+    if (!anyNA(num_cases)) {
+        explanation$case <- factor(explanation$case, levels = as.character(sort(num_cases)))
+    }
+    explanation$feature_desc <- factor(explanation$feature_desc, 
+        levels = rev(unique(explanation$feature_desc[order(explanation$feature, 
+            explanation$feature_value)])))
+    ggplot(explanation, aes_(~case, ~feature_desc)) + geom_tile(aes_(fill = ~feature_weight)) + 
+        facet_wrap(~label, ...) + scale_x_discrete("Case", expand = c(0, 
+        0)) + scale_y_discrete("Feature", expand = c(0, 0)) + 
+        scale_fill_gradient2("Feature\nweight", low = "#FF0000", 
+            mid = "#FFFFFF", high = "#00FF00") + 
+      theme_minimal() +
+        theme(panel.border = element_rect(fill = NA, colour = "grey60", 
+            size = 1), panel.grid = element_blank(), legend.position = "right", 
+            axis.text.x = element_text(angle = 45, hjust = 1, 
+                vjust = 1))
+}
+```
+
+
+# Comparison to the XGBoost Explainer
+
+```{r}
+xgboost_explainer <- 
+  buildExplainer(xgb.model = xgb_model, 
+                 trainingData = xgb.DMatrix(data = preprocessed_training_set, 
+                                            label = training_set$Survived),
+                 type = "binary")
+```
+
+```{r}
+prediction_breakdown <- explainPredictions(xgb.model = xgb_model,
+                                           explainer = xgboost_explainer,
+                                           data = preprocessed_test_set)
+```
+
+```{r}
+ggplot() +
+  geom_point(aes(x = preprocessed_test_set[, "Age"], 
+                 y = prediction_breakdown$Age)) +
+  geom_smooth(aes(x = preprocessed_test_set[, "Age"], 
+                  y = prediction_breakdown$Age), 
+              method = "loess") +
+  labs(x = "Age", y = "Influence of Age in survival probability") +
+  theme_minimal()
+```
+
+Let's remember the results from LIME:
+
+```{r}
+ggplot(explanation %>% dplyr::filter(feature == "Age")) +
+  geom_point(aes(x = feature_value, y = abs(feature_weight))) + 
+  theme_minimal() +
+  labs(x = "Age", y = "Influence of Age in survival probability")
+```
+
+It looks like XGBoost Explainer is much more precise when explaining each prediction. It also looks like LIME is failing at some points, probably because of its "local explanation" nature.
+
+
+# Conclusions
+
+If you are able to use an specific explainer for your model (XGBoost, Random Forest, ...), do it!
+Because it will probably behave better than LIME. And use LIME as an alternative when no alternative exists.

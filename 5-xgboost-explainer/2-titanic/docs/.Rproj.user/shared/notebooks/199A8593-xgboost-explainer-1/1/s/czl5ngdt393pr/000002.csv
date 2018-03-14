@@ -1,0 +1,30 @@
+"0","```r
+set.seed(123)
+full = fread('../data/HR_comma_sep.csv', stringsAsFactors = T)
+full = full[sample(.N)]
+#### Add Random Noise and scale
+tmp_std = sd(full[,satisfaction_level])
+full[,satisfaction_level:=satisfaction_level + runif(.N,-tmp_std,tmp_std)]
+full[,satisfaction_level:=satisfaction_level - min(satisfaction_level)]
+full[,satisfaction_level:=satisfaction_level / max(satisfaction_level)]
+tmp_std = sd(full[,last_evaluation])
+full[,last_evaluation:=last_evaluation + runif(.N,-tmp_std,tmp_std) ]
+full[,last_evaluation:=last_evaluation - min(last_evaluation)]
+full[,last_evaluation:=last_evaluation / max(last_evaluation)]
+tmp_min = min(full[,number_project])
+tmp_std = sd(full[,number_project])
+full[,number_project:=number_project + sample(-ceiling(tmp_std):ceiling(tmp_std),.N, replace=T)]
+full[,number_project:=number_project - min(number_project) + tmp_min]
+tmp_min = min(full[,average_montly_hours])
+tmp_std = sd(full[,average_montly_hours])
+full[,average_montly_hours:=average_montly_hours + sample(-ceiling(tmp_std):ceiling(tmp_std),.N, replace=T)]
+full[,average_montly_hours:=average_montly_hours - min(average_montly_hours) + tmp_min]
+tmp_min = min(full[,time_spend_company])
+tmp_std = sd(full[,time_spend_company])
+full[,time_spend_company:=time_spend_company + sample(-ceiling(tmp_std):ceiling(tmp_std),.N, replace=T)]
+full[,time_spend_company:=time_spend_company - min(time_spend_company) + tmp_min]
+tmp_min = min(full[,number_project])
+tmp_std = sd(full[,number_project])
+full[,number_project:=number_project + sample(-ceiling(tmp_std):ceiling(tmp_std),.N, replace=T)]
+full[,number_project:=number_project - min(number_project) + tmp_min]
+```"

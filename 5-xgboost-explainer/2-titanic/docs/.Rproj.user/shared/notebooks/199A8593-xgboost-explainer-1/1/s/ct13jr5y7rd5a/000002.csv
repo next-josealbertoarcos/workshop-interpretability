@@ -1,0 +1,7 @@
+"0","```r
+weights = rowSums(pred.breakdown)
+pred.xgb = 1/(1+exp(-weights))
+cat(max(xgb.preds-pred.xgb),'\n')
+```"
+"1","6.575013e-07 
+"

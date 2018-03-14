@@ -1,0 +1,4 @@
+"0","ggplot() +"
+"0","  geom_point(aes(test$Fare, prediction_breakdown$Fare)) +"
+"0","  geom_smooth(aes(test$Fare[test$Fare < 500], prediction_breakdown$Fare[test$Fare < 500])) +"
+"0","  labs(x = ""Fare"", y = ""Influence of Fare in survival probability"")"

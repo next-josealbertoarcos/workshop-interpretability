@@ -1,0 +1,2 @@
+"0","train <- fread(""../data/train.csv"")"
+"0","test  <- fread(""../data/test.csv"")"
