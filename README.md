@@ -7,7 +7,7 @@ The main theoretical resource in which this PoC is based in the great [Interpret
 
 # Resources
 
-Several interpretability methods has been tried. You can find examples in R and Python notebooks in each folder.
+Several interpretability methods have been tried. You can find examples in R and Python notebooks in each folder.
 
 In order to be able to make a fair comparison between methods, the same model has been explained with all of them. The model is a XGBoost model trying to predict if a passenger will die or survive in the Titanic dataset. You can find the way the model was created in the folder *0-model-to-explain*.
 
