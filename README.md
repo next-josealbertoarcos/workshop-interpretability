@@ -30,37 +30,31 @@ And that's it!! I recommend reading the great [Interpretable Machine Learning Bo
 
 # Docker images
 
-I have prepared two docker images so that you are able to execute all the notebooks without the dependency problem. You can get the images in two ways:
-
-1. You can download both images from dockerhub:
+I have prepared a docker image so that you are able to execute all the notebooks without the dependency problem. You can build the image using the included docker file:
 
 ```
-docker pull josealbertoarcossanchez/interpretability-python   
-docker pull josealbertoarcossanchez/interpretability-r   
+dockerfile_generic
 ```
 
-2. You can use the included docker files:
-
+In order to build the image:
 ```
-dockerfile_python
-dockerfile_r
+sudo docker build --tag interpretability:v0 .   
 ```
 
-In order to build and execute the Python version (Jupyter & Co):
+
+To execute the Python version (Jupyter & Co):
 
 ```
-sudo docker build --file dockerfile_python --tag interpretability-python:v0 .   
-sudo docker run --net="host" -v /home/josearcos/workshop-interpretability/:/usr/local/notebooks interpretability-python:v0   
+sudo docker run --net="host" -v /home/josearcos/workshop-interpretability/:/usr/local/notebooks interpretability:v0
 ```
 
-In order to build and execute a RStudio Server with every package you will need:
+To execute the R version (RStudio Server with every package you will need):
 
-```
-sudo docker build --file dockerfile_r --tag interpretability-r:v0 .   
-sudo docker run --net="host" -v /home/josearcos/workshop-interpretability/:/home/rstudio/notebooks interpretability-r:v0   
+``` 
+sudo docker run --net="host" -v /home/josearcos/workshop-interpretability/:/home/rstudio/notebooks interpretability:v0 /init
 ```
 
-When running the containers, remember to share the folder containing all the notebooks (in the example, my path was */home/josearcos/workshop-interpretability/*).
+When running the container, remember to share the folder containing all the notebooks (in the example, my path was */home/josearcos/workshop-interpretability/*).
 
 To connect to RStudio Server, just go to:   
 http://localhost:8787/   

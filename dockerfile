@@ -62,8 +62,5 @@ RUN R -e 'install.packages("devtools", repos="http://cran.us.r-project.org", dep
 RUN R -e 'devtools::install_github("IRkernel/IRkernel")'
 RUN R -e 'IRkernel::installspec(name = "irbase", displayname = "R-base")'
 
-
-# Install forgotten things :) ------------------------------------------------------------
-
 WORKDIR /usr/local/notebooks
-CMD ["/init"]
+CMD ["jupyter", "notebook", "--no-browser", "--allow-root"]
