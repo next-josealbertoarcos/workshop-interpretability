@@ -30,11 +30,7 @@ And that's it!! I recommend reading the great [Interpretable Machine Learning Bo
 
 # Docker images
 
-I have prepared a docker image so that you are able to execute all the notebooks without the dependency problem. You can build the image using the included docker file:
-
-```
-dockerfile_generic
-```
+I have prepared a docker image so that you are able to execute all the notebooks without the dependency problem. You can build the image using the included docker file.
 
 In order to build the image:
 ```
